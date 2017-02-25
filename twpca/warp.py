@@ -44,13 +44,13 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
         for trial in data:
             xcorr = np.zeros(n_timesteps)
             for n in range(num_neurons):
-                xcorr += np.correlate(psth[:,n], trial[:,n], mode='same')
+                xcorr += np.correlate(psth[:, n], trial[:, n], mode='same')
             init_shifts.append(np.argmax(xcorr) - (n_timesteps / 2))
         init_shifts = np.array(init_shifts)
         init_scales = np.ones((n_trials,))
 
     else:
-        raise ValueError("Initialization method not recongnized: %s"%init)
+        raise ValueError("Initialization method not recongnized: %s" % init)
 
     tau_params = tf.Variable(dtau_init.astype(np.float32), name="tau_params")
 
