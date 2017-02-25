@@ -1,14 +1,16 @@
-"""Time-warped principal component analysis model"""
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array
 from tqdm import trange
+
 import tensorflow as tf
 from . import warp, utils
 from .regularizers import l2, curvature
 
+
 class TWPCA(BaseEstimator, TransformerMixin):
-    def __init__(self, n_components, shared_length,
+
+    def __init__(self, n_components, shared_length=None,
                  trial_regularizer=l2(1e-6),
                  time_regularizer=l2(1e-6),
                  neuron_regularizer=l2(1e-6),
@@ -17,11 +19,12 @@ class TWPCA(BaseEstimator, TransformerMixin):
                  warpinit='zero',
                  warp_regularizer=curvature(),
                  origin_idx=None):
-        """Time-warped Principal Components Analysis.
+        """Time-warped Principal Components Analysis
 
         Args:
             n_components: number of components to use
-            shared_length: length of each trial in the warped/shared space
+            shared_length (optional): length of each trial in the warped/shared space. If None,
+                the length of the dataset is used (default: None)
             trial_regularizer (optional): regularization on the trial factors (default: l2(1e-6))
             time_regularizer (optional): regularization on the time factors (default: l2(1e-6))
             neuron_regularizer (optional): regularization on the neuron factors (default: l2(1e-6))
@@ -63,6 +66,10 @@ class TWPCA(BaseEstimator, TransformerMixin):
             sess (optional): tensorflow session to use for running the computation. If None,
                 then a new session is created. (default: None)
         """
+
+        # set the shared length to the number of timesteps if not already defined
+        if self.shared_length is None:
+            self.shared_length = X.shape[1]
 
         # convert niter and lr to iterables if given as scalars
         if (not np.iterable(niter)) and (not np.iterable(lr)):
