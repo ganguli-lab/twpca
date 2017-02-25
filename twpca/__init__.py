@@ -11,7 +11,8 @@ from .model import TWPCA
 from . import regularizers
 from . import utils
 from . import warp
+from . import datasets
 
 __all__ = [
-    TWPCA, regularizers, utils, warp
+    TWPCA, regularizers, utils, warp, datasets
 ]
