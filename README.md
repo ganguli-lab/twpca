@@ -2,6 +2,7 @@
 
 [Ben Poole](https://cs.stanford.edu/~poole/) :beer:, [Alex H. Williams](http://alexhwilliams.info/) :studio_microphone:, [Niru Maheswaranathan](http://niru.org/) :soccer:
 
+**TL;DR**: simultaneously align and reduce the dimensionality of data with repeated measurements. Checkout the [demo notebook](https://github.com/ganguli-lab/twpca/blob/master/Time-warped%20PCA%20demo.ipynb).
 ## Overview
 
 ### Description
@@ -40,7 +41,7 @@ neuron_factors = model.params['neuron']     # in this single-neuron example, thi
 estimated_aligned_data = model.transform(raw_data)
 ```
 
-We have provided a more thorough [demo notebook]() demonstrating the application of tWPCA to a synthetic dataset
+We have provided a more thorough [demo notebook](https://github.com/ganguli-lab/twpca/blob/master/Time-warped%20PCA%20demo.ipynb) demonstrating the application of tWPCA to a synthetic dataset
 
 ## Further detail
 
