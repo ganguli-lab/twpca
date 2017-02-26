@@ -43,7 +43,7 @@ neuron_factors = model.params['neuron']     # in this single-neuron example, thi
 estimated_aligned_data = model.transform(raw_data)
 ```
 
-We have provided a more thorough [demo notebook](https://github.com/ganguli-lab/twpca/blob/master/Time-warped%20PCA%20demo.ipynb) demonstrating the application of tWPCA to a synthetic dataset
+We have provided a more thorough [demo notebook](https://github.com/ganguli-lab/twpca/blob/master/Time-warped%20PCA%20demo.ipynb) demonstrating the application of tWPCA to a synthetic dataset.
 
 ## Further detail
 
