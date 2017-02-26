@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='twpca',
-    version='0.0.1',
+    version='0.0.2',
     description='Time warped principal components analysis',
     author='Ben Poole, Alex Williams, Niru Maheswaranathan',
     url='https://github.com/ganguli-lab/twpca',
