@@ -8,7 +8,7 @@ setup(
     url='https://github.com/ganguli-lab/twpca',
     install_requires=[
         'numpy',
-        'tensorflow',
+        'tensorflow>=1.0.0',
         'scipy',
         'scikit-learn',
         'matplotlib',
