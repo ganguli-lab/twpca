@@ -130,8 +130,6 @@ def _get_values_at_coordinates(array, coordinates):
     indices = tf.tile(tf.reshape(tf.range(tf.shape(coordinates)[0]), [-1, 1]),
                       [1, tf.shape(coordinates)[1]])
     indices_flat = tf.reshape(indices, [-1])
-
-    # hack to ensure nd_gather has gradients for pre-1.0.0 tensorflow
     vals = tf.gather_nd(array, tf.stack((indices_flat, coordinates_flat), axis=1))
 
     return tf.reshape(vals, tf.shape(coordinates))
