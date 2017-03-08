@@ -31,7 +31,11 @@ def curvature(scale=1.0, power=1, axis=1):
         second_order_diff = 0.5 * (axis_slice(None, -2) + axis_slice(2, None)) - axis_slice(1, -1)
 
         # the curvature penalty is the second order differences raised to the given power
-        curvature = (1. / power) * tf.abs(second_order_diff) ** power
-        return scale * tf.reduce_mean(curvature)
+	# sum over dimensions, average across trials
 
+	# TODO: add an option for allowing for squared instead of norm
+
+	trial_norm = tf.reduce_sum((1e-9+tf.abs(second_order_diff))**power, axis=1)**(1.0 / power)
+        #curvature = (1. / power) * (1e-9 + tf.abs(second_order_diff) )** power
+        return scale * tf.reduce_mean(trial_norm)
     return _regularizer_function

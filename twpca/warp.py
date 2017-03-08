@@ -7,7 +7,8 @@ from scipy.interpolate import interp1d
 import tensorflow as tf
 
 
-def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_idx=None, data=None):
+def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_idx=None, data=None,
+    center_warps=True):
     """Generate parameters and warping function.
 
     Args:
@@ -19,6 +20,7 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
         origin_idx: fix warps to be identity at this location
         data : optional, ndarray, shape = [n_trials x trial_length x n_neurons]
             only needed when using 'shift' initialization scheme
+	center_warps: whether to force the warps to be on average equal to the identity
     Returns:
         warps: warping functions
         inv_warps: inverse of the warping functions
@@ -65,9 +67,9 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
 
     # renormalize the warps so that they average to the identity line across trials.
     #   i.e. mean(tau[:,t]) = t
-    linear_ramp = tf.range(0, shared_length, dtype=tf.float32)
-    tau = tau - tf.reduce_mean(tau, axis=0, keep_dims=True) + linear_ramp[None, :]
-
+    if center_warps:
+        linear_ramp = tf.range(0, shared_length, dtype=tf.float32)
+        tau = tau - tf.reduce_mean(tau, axis=0, keep_dims=True) + linear_ramp[None, :]
     # Force warps to be identical at origin idx
     if origin_idx is not None:
         pin = tau - tau[:, origin_idx][:, None] + origin_idx
