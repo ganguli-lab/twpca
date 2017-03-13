@@ -129,18 +129,6 @@ def warp(data, tau):
     return tf.stack([_warp_neuron(data[:, :, i]) for i in range(n_neuron)], axis=2)
 
 
-def _differentiable_gather_nd(array, coordinates):
-    """Mimics the behavior of tf.gather_nd
-
-    Used for versions of tensorflow<1.0.0 which do not have a gradient defined for gather_nd
-
-    *Note*: this will be deprecated in the next version of TWPCA
-    """
-    input_as_vector = tf.reshape(array, [-1])
-    coordinates_as_indices = (coordinates[:, 0] * tf.shape(array)[1]) + coordinates[:, 1]
-    return tf.gather(input_as_vector, coordinates_as_indices)
-
-
 def _get_values_at_coordinates(array, coordinates):
     """Extract values at given coordinates.
     Args:
@@ -151,12 +139,7 @@ def _get_values_at_coordinates(array, coordinates):
     indices = tf.tile(tf.reshape(tf.range(tf.shape(coordinates)[0]), [-1, 1]),
                       [1, tf.shape(coordinates)[1]])
     indices_flat = tf.reshape(indices, [-1])
-
-    # hack to ensure nd_gather has gradients for pre-1.0.0 tensorflow
-    if int(tf.__version__[0]) >= 1:
-        vals = tf.gather_nd(array, tf.stack((indices_flat, coordinates_flat), axis=1))
-    else:
-        vals = _differentiable_gather_nd(input, tf.stack((indices_flat, coordinates_flat), axis=1))
+    vals = tf.gather_nd(array, tf.stack((indices_flat, coordinates_flat), axis=1))
 
     return tf.reshape(vals, tf.shape(coordinates))
 
