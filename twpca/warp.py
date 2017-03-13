@@ -55,7 +55,7 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
             xcorr = np.zeros(n_timesteps)
             for n in range(num_neurons):
                 xcorr += np.correlate(psth[:, n], trial[:last_idx[tidx], n], mode='same')
-            init_shifts.append(np.argmax(xcorr) - (n_timesteps / 2))
+            init_shifts.append(np.argmax(xcorr) - (last_idx[tidx] / 2))
         init_shifts = np.array(init_shifts)
         init_scales = np.ones((n_trials,))
     else:
