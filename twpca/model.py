@@ -16,7 +16,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
                  neuron_regularizer=l2(1e-6),
                  fit_trial_factors=False,
                  warptype='nonlinear',
-                 warpinit='zero',
+                 warpinit='identity',
                  warp_regularizer=curvature(),
                  origin_idx=None):
         """Time-warped Principal Components Analysis
@@ -32,7 +32,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
                 to the neuron and time factors (default: False)
             warptype: type of warps to allow ('nonlinear', 'affine', 'shift', or 'scale'). The
                 default is 'nonlinear' which allows for full nonlinear warping
-            warpinit: either 'zero' or 'randn'
+            warpinit: either 'identity', 'linear', 'shift', 'randn'
             warp_regularizer (optional): regularization on the warp function (default: curvature())
             origin_idx (optional): if not None, all warping functions are pinned (aligned) at this
                 index. (default: None)
@@ -85,23 +85,33 @@ class TWPCA(BaseEstimator, TransformerMixin):
         else:
             raise ValueError("niter and lr must either be numbers or iterables of the same length.")
 
-        # conversion to float32, asserts the array is finite and at least 3D
-        np_X = np.atleast_3d(check_array(X, allow_nd=True, dtype=np.float32))
-        self.X = tf.constant(np_X)
-
+    	# Convert matrix to 3d
+    	np_X = np.atleast_3d(X)
         # pull out dimensions
         n_trials, n_timesteps, n_neurons = np_X.shape
+    	# Identify finite entries of data matrix
+    	np_mask = np.isfinite(X)
+    	self._num_datapoints = np.sum(np_mask)
+    	self._mask = tf.constant(np_mask)
+
+        # Compute last non-nan index for each trial
+        trial_masks = np.hstack((np.all(np_mask, axis=-1), np.zeros((n_trials, 1), dtype=bool)))
+        self.last_idx = np.argmin(trial_masks, axis=1)
+
+        # conversion to float32, asserts the array is finite and at least 3D
+        #np_X = np.atleast_3d(check_array(X, allow_nd=True, dtype=np.float32))
+        self.X = tf.constant(np_X)
 
         # build the parameterized warping functions
         self._params['warp'], self._inv_warp, warp_vars = warp.generate_warps(n_trials,
-            n_timesteps, self.shared_length, self.warptype, self.warpinit, self.origin_idx, data=np_X)
+            n_timesteps, self.shared_length, self.warptype, self.warpinit, self.origin_idx, data=np_X, last_idx=self.last_idx)
 
         # Initialize factor matrices
         if self.fit_trial_factors:
-            trial_init, time_init, neuron_init = utils._compute_lowrank_factors(np_X, self.n_components)
+            trial_init, time_init, neuron_init = utils.compute_lowrank_factors(np_X, self.n_components, compute_trial_factors=True)
             self._params['trial'] = tf.Variable(trial_init, name="trial_factors")
         else:
-            time_init, neuron_init = utils._compute_lowrank_factors(np_X, self.n_components, modes=(1, 2))
+            time_init, neuron_init = utils.compute_lowrank_factors(np_X, self.n_components)
 
         # create tensorflow variables for factor matrices
         self._params['time'] = tf.Variable(time_init, name="time_factors")

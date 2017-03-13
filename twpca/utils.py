@@ -72,16 +72,20 @@ def stable_rank(matrix):
     return svals_squared.sum() / svals_squared.max()
 
 
-def _compute_lowrank_factors(data, n_components, modes=None):
+def compute_lowrank_factors(data, n_components, compute_trial_factors=False):
     """Gets initial values for factor matrices by SVD on tensor unfoldings
 
     Args:
         data: array-like
         n_components: int
-        modes: iterable of int
+        compute_trial_factors: optional, whether to compute trial factors
     """
-    if modes is None:
-        modes = range(data.ndim)
-
-    return [np.linalg.svd(unfold(data, mode), full_matrices=False)[0][:, :n_components]
-            for mode in modes]
+    psth = np.nanmean(data, axis=0)
+    # TODO: use randomized/truncated SVD to speed this up
+    U, s, V = np.linalg.svd(psth, full_matrices=False)
+    scale = np.sqrt(s[:n_components])[None, :]
+    time_factors = U[:, :n_components] * scale
+    neuron_factors = V[:n_components, :].T * scale
+    if compute_trial_factors:
+        raise ValueError("Trial factor initialization is missing, sorry.")
+    return time_factors, neuron_factors
