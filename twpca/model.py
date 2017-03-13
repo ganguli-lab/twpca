@@ -86,7 +86,10 @@ class TWPCA(BaseEstimator, TransformerMixin):
             raise ValueError("niter and lr must either be numbers or iterables of the same length.")
 
     	# Convert matrix to 3d
-    	np_X = np.atleast_3d(X)
+    	np_X = np.atleast_3d(X.astype(np.float32))
+        # Convet NaNs to 0 so TensorFlow doesn't throw NaNs in gradient
+        # See: https://github.com/tensorflow/tensorflow/issues/2540
+        self.X = tf.constant(np.nan_to_num(np_X))
         # pull out dimensions
         n_trials, n_timesteps, n_neurons = np_X.shape
     	# Identify finite entries of data matrix
@@ -97,10 +100,6 @@ class TWPCA(BaseEstimator, TransformerMixin):
         # Compute last non-nan index for each trial
         trial_masks = np.hstack((np.all(np_mask, axis=-1), np.zeros((n_trials, 1), dtype=bool)))
         self.last_idx = np.argmin(trial_masks, axis=1)
-
-        # conversion to float32, asserts the array is finite and at least 3D
-        #np_X = np.atleast_3d(check_array(X, allow_nd=True, dtype=np.float32))
-        self.X = tf.constant(np_X)
 
         # build the parameterized warping functions
         self._params['warp'], self._inv_warp, warp_vars = warp.generate_warps(n_trials,
@@ -128,7 +127,8 @@ class TWPCA(BaseEstimator, TransformerMixin):
             self.X_pred = tf.einsum('ijk,nk->ijn', warped_time_factors, self._params['neuron'])
 
         # total objective
-        self.recon_cost = tf.reduce_mean((self.X_pred - self.X)**2)
+        # only include terms that were not NaN in the original data matrix
+        self.recon_cost = tf.reduce_mean(tf.where(self._mask, (self.X_pred - self.X)**2, tf.zeros_like(self.X)))
         self.objective = self.recon_cost + self.regularization
         self.obj_history = []
 
