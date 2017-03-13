@@ -83,9 +83,10 @@ def compute_lowrank_factors(data, n_components, compute_trial_factors=False):
     psth = np.nanmean(data, axis=0)
     # TODO: use randomized/truncated SVD to speed this up
     U, s, V = np.linalg.svd(psth, full_matrices=False)
+    # TODO: investigate why scaling hurts performance
     scale = np.sqrt(s[:n_components])[None, :]
-    time_factors = U[:, :n_components] * scale
-    neuron_factors = V[:n_components, :].T * scale
+    time_factors = U[:, :n_components] #* scale
+    neuron_factors = V[:n_components, :].T #* scale
     if compute_trial_factors:
         raise ValueError("Trial factor initialization is missing, sorry.")
     return time_factors, neuron_factors
