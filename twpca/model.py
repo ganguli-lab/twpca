@@ -106,15 +106,13 @@ class TWPCA(BaseEstimator, TransformerMixin):
             n_timesteps, self.shared_length, self.warptype, self.warpinit, self.origin_idx, data=np_X, last_idx=self.last_idx)
 
         # Initialize factor matrices
-        if self.fit_trial_factors:
-            trial_init, time_init, neuron_init = utils.compute_lowrank_factors(np_X, self.n_components, compute_trial_factors=True)
-            self._params['trial'] = tf.Variable(trial_init, name="trial_factors")
-        else:
-            time_init, neuron_init = utils.compute_lowrank_factors(np_X, self.n_components)
+        trial_init, time_init, neuron_init = utils.compute_lowrank_factors(np_X, self.n_components, self.fit_trial_factors, self.last_idx)
 
         # create tensorflow variables for factor matrices
         self._params['time'] = tf.Variable(time_init, name="time_factors")
         self._params['neuron'] = tf.Variable(neuron_init, name="neuron_factors")
+        if self.fit_trial_factors:
+            self._params['trial'] = tf.Variable(trial_init, name="trial_factors")
 
         # warped time factors warped for each trial
         warped_time_factors = warp.warp(tf.tile(tf.expand_dims(self._params['time'], [0]), [n_trials, 1, 1]), self._params['warp'])
