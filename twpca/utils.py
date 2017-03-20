@@ -72,7 +72,7 @@ def stable_rank(matrix):
     return svals_squared.sum() / svals_squared.max()
 
 
-def compute_lowrank_factors(data, n_components, fit_trial_factors, last_idx):
+def compute_lowrank_factors(data, n_components, fit_trial_factors, last_idx, scale=1.0):
     """Gets initial values for factor matrices by SVD on tensor unfoldings
 
     Args:
@@ -80,28 +80,18 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, last_idx):
         n_components: int
         fit_trial_factors: bool, whether to compute trial factors
         last_idx: nd-array, list of ints holding last index before trial end
+        scale: scale neuron and time factors by this amount, default 1.0
     """
-    psth = np.nanmean(data, axis=0)
-    # TODO: use randomized/truncated SVD to speed this up
-    U, s, V = np.linalg.svd(psth, full_matrices=False)
-    # TODO: investigate why scaling hurts performance
-    scale = np.sqrt(s[:n_components])[None, :]
-    time_factors = U[:, :n_components] #* scale
-    neuron_factors = V[:n_components, :].T #* scale
-    if compute_trial_factors:
-        raise ValueError("Trial factor initialization is missing, sorry.")
-    return time_factors, neuron_factors
-
-
     # do svd on trial-averaged data matrix
+    # TODO: use randomized/truncated SVD to speed this up
     u, s, v = np.linalg.svd(np.nanmean(data, axis=0), full_matrices=False)
-    sqs = np.sqrt(s)
+    sqs = np.sqrt(s) * scale
 
     # set neuron and time factors to top singular vectors
-    time_fctr = u[:, :n_components] * sqs[:n_components]
-    neuron_fctr = v[:n_components].T * sqs[:n_components]
+    time_fctr = (u[:, :n_components] * sqs[:n_components]).astype(np.float32)
+    neuron_fctr = (v[:n_components].T * sqs[:n_components]).astype(np.float32)
 
-    if fit_trial_factors is False:
+    if not fit_trial_factors:
         return None, time_fctr, neuron_fctr
 
     # If trial factors also need to be initialized, do a single step of alternating
@@ -109,10 +99,9 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, last_idx):
     else:
         Apinv = np.linalg.pinv(time_fctr)
         Bpinv = np.linalg.pinv(neuron_fctr)
-        trial_fctr = np.empty((data.shape[0], n_components))
-
-        for k, trial in enumerate(data):
+        trial_fctr = np.empty((data.shape[0], n_components), dtype=np.float32)
+        from tqdm import tqdm
+        for k, trial in enumerate(tqdm(data)):
             t = last_idx[k] # last index before NaN
-            trial_fctr[k] = np.diag(Apinv.dot(trial[:t]).dot(Bpinv.T))
-
-        return trial_fctr, neuron_fctr, time_fctr
+            trial_fctr[k] =np.diag(np.linalg.pinv(time_fctr[:t]).dot(trial[:t]).dot(Bpinv.T))
+        return trial_fctr, time_fctr, neuron_fctr
