@@ -7,7 +7,7 @@ from scipy.interpolate import interp1d
 import tensorflow as tf
 
 
-def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_idx=None, data=None):
+def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_idx=None, data=None, last_idx=None):
     """Generate parameters and warping function.
 
     Args:
@@ -15,9 +15,11 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
         n_timesteps: number of timesteps for each trial in clock space
         shared_length: number of timesteps in shared space
         warptype: type of warping, one of ('nonlinear', 'affine', 'shift', 'scale')
-        init: initialization type ('zero', 'randn', or 'shfit')
+        init: initialization type ('identity', 'randn', 'linear', or 'shfit')
         origin_idx: fix warps to be identity at this location
         data : optional, ndarray, shape = [n_trials x trial_length x n_neurons]
+            only needed when using 'shift' initialization scheme
+        last_idx: optional, list of last non-nan idx for each trial
             only needed when using 'shift' initialization scheme
     Returns:
         warps: warping functions
@@ -30,25 +32,32 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
         dtau_init = 0.5 * np.random.randn(n_trials, n_timesteps)
         init_scales = np.ones((n_trials,))
         init_shifts = np.zeros((n_trials,))
-    elif init == 'zero':
+    elif init == 'identity':
         dtau_init = np.zeros((n_trials, n_timesteps))
         init_scales = np.ones((n_trials,))
+        init_shifts = np.zeros((n_trials,))
+    elif init == 'linear':
+        if last_idx is None:
+            raise ValueError("To use linear initialization, you must pass last_idx to generate_warps.")
+        dtau_init = np.zeros((n_trials, n_timesteps))
+        init_scales = np.array(last_idx) / np.mean(last_idx)
         init_shifts = np.zeros((n_trials,))
     elif init == 'shift':
         if data is None:
             raise ValueError("To use shift initialization, you must pass data to generate_warps.")
+        if last_idx is None:
+            raise ValueError("To use shift initialization, you must pass last_idx to generate_warps.")
         dtau_init = np.zeros((n_trials, n_timesteps))
-        psth = np.mean(data, axis=0)
+        psth = np.nanmean(data, axis=0)
         init_shifts = []
-        num_neurons = data.shape[-1]
-        for trial in data:
+        num_neurons =   data.shape[-1]
+        for tidx, trial in enumerate(data):
             xcorr = np.zeros(n_timesteps)
             for n in range(num_neurons):
-                xcorr += np.correlate(psth[:, n], trial[:, n], mode='same')
-            init_shifts.append(np.argmax(xcorr) - (n_timesteps / 2))
+                xcorr += np.correlate(psth[:, n], trial[:last_idx[tidx], n], mode='same')
+            init_shifts.append(np.argmax(xcorr) - (last_idx[tidx] / 2))
         init_shifts = np.array(init_shifts)
         init_scales = np.ones((n_trials,))
-
     else:
         raise ValueError("Initialization method not recongnized: %s" % init)
 

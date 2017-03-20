@@ -72,16 +72,34 @@ def stable_rank(matrix):
     return svals_squared.sum() / svals_squared.max()
 
 
-def _compute_lowrank_factors(data, n_components, modes=None):
+def compute_lowrank_factors(data, n_components, fit_trial_factors, last_idx, scale=1.0):
     """Gets initial values for factor matrices by SVD on tensor unfoldings
 
     Args:
         data: array-like
         n_components: int
-        modes: iterable of int
+        fit_trial_factors: bool, whether to compute trial factors
+        last_idx: nd-array, list of ints holding last index before trial end
+        scale: scale neuron and time factors by this amount, default 1.0
     """
-    if modes is None:
-        modes = range(data.ndim)
+    # do svd on trial-averaged data matrix
+    # TODO: use randomized/truncated SVD to speed this up
+    u, s, v = np.linalg.svd(np.nanmean(data, axis=0), full_matrices=False)
+    sqs = np.sqrt(s) * scale
 
-    return [np.linalg.svd(unfold(data, mode), full_matrices=False)[0][:, :n_components]
-            for mode in modes]
+    # set neuron and time factors to top singular vectors
+    time_fctr = (u[:, :n_components] * sqs[:n_components]).astype(np.float32)
+    neuron_fctr = (v[:n_components].T * sqs[:n_components]).astype(np.float32)
+
+    if not fit_trial_factors:
+        return None, time_fctr, neuron_fctr
+
+    # If trial factors also need to be initialized, do a single step of alternating
+    # least squares (see Kolda & Bader, 2009) for CP tensor decomposition.
+    else:
+        Bpinv = np.linalg.pinv(neuron_fctr)
+        trial_fctr = np.empty((data.shape[0], n_components), dtype=np.float32)
+        for k, trial in enumerate(data):
+            t = last_idx[k] # last index before NaN
+            trial_fctr[k] = np.diag(np.linalg.pinv(time_fctr[:t]).dot(trial[:t]).dot(Bpinv.T))
+        return trial_fctr, time_fctr, neuron_fctr
