@@ -97,11 +97,9 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, last_idx, sca
     # If trial factors also need to be initialized, do a single step of alternating
     # least squares (see Kolda & Bader, 2009) for CP tensor decomposition.
     else:
-        Apinv = np.linalg.pinv(time_fctr)
         Bpinv = np.linalg.pinv(neuron_fctr)
         trial_fctr = np.empty((data.shape[0], n_components), dtype=np.float32)
-        from tqdm import tqdm
-        for k, trial in enumerate(tqdm(data)):
+        for k, trial in enumerate(data):
             t = last_idx[k] # last index before NaN
-            trial_fctr[k] =np.diag(np.linalg.pinv(time_fctr[:t]).dot(trial[:t]).dot(Bpinv.T))
+            trial_fctr[k] = np.diag(np.linalg.pinv(time_fctr[:t]).dot(trial[:t]).dot(Bpinv.T))
         return trial_fctr, time_fctr, neuron_fctr
