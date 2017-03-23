@@ -66,6 +66,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
             X: 3D numpy array with dimensions [n_trials, n_timepoints, n_neurons]
             optimizer (optional): a tf.train.Optimizer class (default: AdamOptimizer)
             niter (optional): number of iterations to run the optimizer for (default: 1000)
+            progressbar (optional): whether to print a progressbar (default: True)
             sess (optional): tensorflow session to use for running the computation. If None,
                 then a new session is created. (default: None)
         """
@@ -154,8 +155,8 @@ class TWPCA(BaseEstimator, TransformerMixin):
         utils.initialize_new_vars(self._sess)
 
         # run the optimizer
-        for train_args in zip(niter, lr, progressbar):
-            self.train(*train_args)
+        for train_args in zip(niter, lr):
+            self.train(*train_args, progressbar)
 
         return self
 
