@@ -4,7 +4,7 @@
 
 ![image](https://img.shields.io/pypi/v/twpca.svg)
 
-**TL;DR**: simultaneously align and reduce the dimensionality of data with repeated measurements. Checkout the [demo notebook](https://github.com/ganguli-lab/twpca/blob/master/Time-warped%20PCA%20demo.ipynb).
+**TL;DR**: simultaneously align and reduce the dimensionality of data with repeated measurements. Checkout the [demo notebook](https://github.com/ganguli-lab/twpca/blob/master/demo.ipynb).
 ## Overview
 
 ### Description
