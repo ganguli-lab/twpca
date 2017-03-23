@@ -72,7 +72,7 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
 
     raw_tau = tau_scale[:, None] * tf.cumsum(d_tau, 1) + tau_shift[:, None]
     mean_intercept = tf.reduce_mean(raw_tau[:, 0])
-    mean_slope = tf.reduce_mean(raw_tau[:, -1] - raw_tau[:, 0]) / n_timesteps
+    mean_slope = tf.reduce_mean(raw_tau[:, -1] - raw_tau[:, 0]) / (n_timesteps - 1)
     tau = (raw_tau - mean_intercept) / mean_slope
 
     # Force warps to be identical at origin idx
