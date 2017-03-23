@@ -85,17 +85,17 @@ class TWPCA(BaseEstimator, TransformerMixin):
         else:
             raise ValueError("niter and lr must either be numbers or iterables of the same length.")
 
-    	# Convert matrix to 3d
-    	np_X = np.atleast_3d(X.astype(np.float32))
+        # Convert matrix to 3d
+        np_X = np.atleast_3d(X.astype(np.float32))
         # Convet NaNs to 0 so TensorFlow doesn't throw NaNs in gradient
         # See: https://github.com/tensorflow/tensorflow/issues/2540
         self.X = tf.constant(np.nan_to_num(np_X))
         # pull out dimensions
         n_trials, n_timesteps, n_neurons = np_X.shape
-    	# Identify finite entries of data matrix
-    	np_mask = np.isfinite(X)
-    	self._num_datapoints = np.sum(np_mask)
-    	self._mask = tf.constant(np_mask)
+        # Identify finite entries of data matrix
+        np_mask = np.isfinite(X)
+        self._num_datapoints = np.sum(np_mask)
+        self._mask = tf.constant(np_mask)
 
         # Compute last non-nan index for each trial
         trial_masks = np.hstack((np.all(np_mask, axis=-1), np.zeros((n_trials, 1), dtype=bool)))
