@@ -70,12 +70,10 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
     tau_shift = tf.Variable(init_shifts.astype(np.float32), name="tau_shift")
     tau_scale = tf.Variable(init_scales.astype(np.float32), name="tau_scale")
 
-    tau = tau_scale[:, None] * tf.cumsum(d_tau, 1) + tau_shift[:, None]
-
-    # renormalize the warps so that they average to the identity line across trials.
-    #   i.e. mean(tau[:,t]) = t
-    linear_ramp = tf.range(0, shared_length, dtype=tf.float32)
-    tau = tau - tf.reduce_mean(tau, axis=0, keep_dims=True) + linear_ramp[None, :]
+    raw_tau = tau_scale[:, None] * tf.cumsum(d_tau, 1) + tau_shift[:, None]
+    mean_intercept = tf.reduce_mean(raw_tau[:, 0])
+    mean_slope = tf.reduce_mean(raw_tau[:, -1] - raw_tau[:, 0]) / n_timesteps
+    tau = (raw_tau - mean_intercept) / mean_slope
 
     # Force warps to be identical at origin idx
     if origin_idx is not None:
