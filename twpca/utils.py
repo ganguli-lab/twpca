@@ -4,7 +4,7 @@ TWPCA utilities
 import numpy as np
 import tensorflow as tf
 
-__all__ = ['get_uninitialized_vars', 'initialize_new_vars', 'unfold', 'stable_rank']
+__all__ = ['get_uninitialized_vars', 'initialize_new_vars', 'stable_rank']
 
 
 def get_uninitialized_vars(sess, var_list=None):
@@ -36,20 +36,6 @@ def initialize_new_vars(sess, var_list=None):
     """
     sess.run(tf.variables_initializer(get_uninitialized_vars(sess, var_list)))
 
-
-def unfold(data, axis):
-    """Unfold tensor along specified mode
-
-    Args:
-        data: numpy nd-array
-        axis: int
-
-    Returns:
-        data_matrix: numpy 2d-array
-    """
-    return np.rollaxis(data, axis).reshape(data.shape[axis], -1)
-
-
 def stable_rank(matrix):
     """Computes the stable rank of a matrix
 
@@ -73,7 +59,7 @@ def stable_rank(matrix):
 
 
 def compute_lowrank_factors(data, n_components, fit_trial_factors, last_idx, scale=1.0):
-    """Gets initial values for factor matrices by SVD on tensor unfoldings
+    """Gets initial values for factor matrices by SVD on trial-averaged data
 
     Args:
         data: array-like
