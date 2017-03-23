@@ -59,7 +59,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
         self._params = {}     # model parameters (if nonneg=True, softplus transform applied to raw_params)
         self._sess = None
 
-    def fit(self, X, optimizer=tf.train.AdamOptimizer, niter=1000, lr=1e-3, sess=None):
+    def fit(self, X, optimizer=tf.train.AdamOptimizer, niter=1000, lr=1e-3, sess=None, progressbar=True):
         """Fit the twPCA model
 
         Args:
@@ -154,7 +154,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
         utils.initialize_new_vars(self._sess)
 
         # run the optimizer
-        for train_args in zip(niter, lr):
+        for train_args in zip(niter, lr, progressbar):
             self.train(*train_args)
 
         return self

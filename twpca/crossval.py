@@ -4,6 +4,7 @@ TWPCA cross-validation and hyperparameter search routines
 import numpy as np
 import tensorflow as tf
 import itertools
+from tqdm import tqdm
 from .model import TWPCA
 from .regularizers import curvature
 from .utils import stable_rank
@@ -60,6 +61,7 @@ def cross_validate(model, data, method, K, max_fits=np.inf, **fit_kw):
         tf.reset_default_graph()
         sess = tf.Session()
         model.fit(traindata, sess=sess, **fit_kw)
+        # TODO - warmstart fits?
 
         # assess dimensionality of warped vs unwarped testdata
         warped_testdata = model.transform(testdata)
@@ -97,7 +99,8 @@ def cross_validate(model, data, method, K, max_fits=np.inf, **fit_kw):
 
 def hyperparam_gridsearch(data, warp_penalties=(0.1,), time_penalties=(0.1,),
                           crossval_method='kfold', K=5, max_crossval_fits=np.inf,
-                          fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500)), **model_args):
+                          fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
+                          **model_args):
 
     # TODO - make this more flexible to try other types of regularization
     warp_reg = lambda s: curvature(scale=s, power=1)
@@ -109,11 +112,20 @@ def hyperparam_gridsearch(data, warp_penalties=(0.1,), time_penalties=(0.1,),
     warp_penalties = np.tile(np.atleast_2d(warp_penalties), (J, 1)).T
     time_penalties = np.tile(np.atleast_2d(time_penalties), (I, 1))
 
-    for i, j in itertools.product(range(I), range(J)):
+    for i, j in tqdm(itertools.product(range(I), range(J))):
         warp_penalty = warp_penalties[i, j]
         time_penalty = time_penalties[i, j]
 
         model = TWPCA(**model_args, warp_regularizer=warp_reg(warp_penalty), time_regularizer=time_reg(time_penalty))
         results[i, j] = cross_validate(model, data, crossval_method, K, max_fits=max_crossval_fits, **fit_kw)
 
-    return results, warp_penalties, time_penalties
+    N = len(results[-1, -1])
+    summary_stats = ['test_error', 'train_error', 'warped_rank', 'unwarped_rank']
+    summary = {stat: np.empty((I, J, N)) for stat in summary_stats}
+    for stat in summary_stats:
+        for i, j in itertools.product(range(I), range(J)):
+            summary[stat][i, j, :] = [np.mean(result[stat]) for result in results[i, j]]
+    summary['warp_penalties'] = warp_penalties
+    summary['time_penalties'] = time_penalties
+
+    return summary, results
