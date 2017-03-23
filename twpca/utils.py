@@ -102,3 +102,4 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, nonneg, last_
             t = last_idx[k] # last index before NaN
             trial_fctr[k] = np.diag(np.linalg.pinv(time_fctr[:t]).dot(trial[:t]).dot(Bpinv.T))
         return trial_fctr, time_fctr, neuron_fctr
+

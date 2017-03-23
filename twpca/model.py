@@ -124,14 +124,14 @@ class TWPCA(BaseEstimator, TransformerMixin):
             self._params['trial'] = rectifier(self._raw_params['trial'])
 
         # warped time factors warped for each trial
-        warped_time_factors = warp.warp(tf.tile(tf.expand_dims(self._params['time'], [0]), [n_trials, 1, 1]), self._params['warp'])
+        self._warped_time_factors = warp.warp(tf.tile(tf.expand_dims(self._params['time'], [0]), [n_trials, 1, 1]), self._params['warp'])
 
         if self.fit_trial_factors:
             # trial i, time j, factor k, neuron n
-            self.X_pred = tf.einsum('ik,ijk,nk->ijn', self._params['trial'], warped_time_factors, self._params['neuron'])
+            self.X_pred = tf.einsum('ik,ijk,nk->ijn', self._params['trial'], self._warped_time_factors, self._params['neuron'])
         else:
             # trial i, time j, factor k, neuron n
-            self.X_pred = tf.einsum('ijk,nk->ijn', warped_time_factors, self._params['neuron'])
+            self.X_pred = tf.einsum('ijk,nk->ijn', self._warped_time_factors, self._params['neuron'])
 
         # total objective
         # only include terms that were not NaN in the original data matrix
