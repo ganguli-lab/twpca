@@ -54,3 +54,63 @@ def jittered_neuron(t=None, feature=None, n_trial=61, jitter=1.0, gain=0.0, nois
     aligned_data = np.array([g*feature(0) for g in gains]) + noise
 
     return feature(0), np.atleast_3d(aligned_data), np.atleast_3d(jittered_data)
+
+def jittered_population(n_trial=100, n_time=130, n_neuron=50, n_events=3, tau=10., event_gap=25, n_events=3, max_jitter=15):
+    """Generates a synthetic spiking dataset of a population of neurons with correlated jitters.
+
+    Parameters
+    ----------
+    n_trial : int
+        number of trials
+    n_time : int
+        number of within-trial timepoints
+    n_neuron : int
+        number of recorded neurons
+    n_events : int
+        number of transient increases in firing rate
+    tau : float
+        time constant for exponential decay of events
+    event_gap : int
+        average gap between neural events
+    max_jitter : int
+        maximum amount of jitter in each event
+
+    Returns
+    -------
+    rates : array_like
+        n_trial x n_time x n_neuron array of firing probabilities
+    spikes : array_like
+        n_trial x n_time x n_neuron array of observed spikes
+    """
+
+    # Randomly generate jitters
+    jitters = np.random.randint(-max_jitter, max_jitter, size=(n_trial, n_events))
+    ordering = np.argsort(jitters[:, 0])
+    jitters = jitters[ordering]
+
+    # Create one-hot matrix that encodes the location of latent events
+    events = np.zeros((n_trial, n_time))
+    for trial_idx, jitter in enumerate(jitters):
+        trial_event_times = np.cumsum(event_gap + jitter)
+        events[trial_idx, trial_event_times] = 1.0
+    avg_event = np.zeros(n_time)
+    avg_event[np.cumsum([event_gap] * n_events)] = 1.0
+
+    # Convolve latent events with an exponential filter
+    impulse_response = np.exp(-np.arange(n_time)/float(tau))
+    impulse_response /= impulse_response.sum()
+
+    latents = np.array([np.convolve(e, impulse_response, mode='full')[:n_time] for e in events])
+
+    # Coupling from one dimensional latent state to each neuron
+    readout_weights = np.random.rand(n_neuron) + 0.1
+
+    # Probability of firing for each neuron
+    rates = np.exp(np.array([np.outer(latent, readout_weights) for latent in latents]))
+    rates -= rates.min()
+    rates /= rates.max()
+
+    # Sample spike trains
+    spikes = np.random.binomial(1, rates).astype(np.float32)
+
+    return rates, spikes

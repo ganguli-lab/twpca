@@ -15,5 +15,5 @@ from . import datasets
 from . import crossval
 
 __all__ = [
-    TWPCA, regularizers, utils, warp, datasets
+    TWPCA, regularizers, utils, warp, datasets, crossval
 ]

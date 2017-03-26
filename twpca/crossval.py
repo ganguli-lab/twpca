@@ -112,7 +112,7 @@ def hyperparam_gridsearch(data, warp_penalties=(0.1,), time_penalties=(0.1,),
     warp_penalties = np.tile(np.atleast_2d(warp_penalties), (J, 1)).T
     time_penalties = np.tile(np.atleast_2d(time_penalties), (I, 1))
 
-    for i, j in tqdm(itertools.product(range(I), range(J))):
+    for i, j in tqdm(list(itertools.product(range(I), range(J)))):
         warp_penalty = warp_penalties[i, j]
         time_penalty = time_penalties[i, j]
 
