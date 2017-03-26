@@ -16,7 +16,7 @@ smoothed_spikes = gaussian_filter1d(spikes, smooth_std, axis=1)
 
 # save example figure of raw data
 import matplotlib
-matplotlib.use(‘Agg’)
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 plt.figure(figsize=(10,3))
 plt.subplot(121)
@@ -33,9 +33,9 @@ plt.close()
 # Do hyperparameter serach by cross-validation
 gridsearch_args = {
     'n_components': 1,
-    'warp_penalties': np.logspace(-5, -1, 6),
-    'time_penalties': np.logspace(-2, 2, 6),
-    'fit_kw': {'niter': (250,), 'progressbar': False, 'lr': (0.1,)}
+    'warp_penalties': np.logspace(-5, -1, 8),
+    'time_penalties': np.logspace(-2, 4, 8),
+    'fit_kw': {'niter': (250,500), 'progressbar': False, 'lr': (0.1,0.01)}
 }
 summary, results = hyperparam_gridsearch(smoothed_spikes, **gridsearch_args)
 
