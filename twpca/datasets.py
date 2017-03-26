@@ -55,7 +55,7 @@ def jittered_neuron(t=None, feature=None, n_trial=61, jitter=1.0, gain=0.0, nois
 
     return feature(0), np.atleast_3d(aligned_data), np.atleast_3d(jittered_data)
 
-def jittered_population(n_trial=100, n_time=130, n_neuron=50, n_events=3, tau=10., event_gap=25, n_events=3, max_jitter=15):
+def jittered_population(n_trial=100, n_time=130, n_neuron=50, n_events=3, tau=10., event_gap=25, max_jitter=15):
     """Generates a synthetic spiking dataset of a population of neurons with correlated jitters.
 
     Parameters

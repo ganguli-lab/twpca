@@ -104,7 +104,7 @@ def hyperparam_gridsearch(data, warp_penalties=(0.1,), time_penalties=(0.1,),
 
     # TODO - make this more flexible to try other types of regularization
     warp_reg = lambda s: curvature(scale=s, power=1)
-    time_reg = lambda s: curvature(scale=s, power=2)
+    time_reg = lambda s: curvature(scale=s, power=2, axis=0)
 
     I, J = len(warp_penalties), len(time_penalties)
     results = np.empty((I, J), dtype=object)
