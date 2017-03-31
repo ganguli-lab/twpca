@@ -41,7 +41,17 @@ def leave_n_out(N, K):
         yield train_idx, test_idx    
 
 def cross_validate(model, data, method, K, max_fits=np.inf, **fit_kw):
-    """???"""
+    """Runs specified cross-validation method.
+
+    Args:
+        model: TWPCA model instance
+        data: array-like (n_trials x n_timepoints x n_neurons)
+        method: string specifying method {'kfold', 'leaveout'}
+        K: int, crossvalidation parameter
+
+    Returns:
+        results: dict, model parameters and metrics calculated for all sessions
+    """
 
     if method == 'kfold':
         partitions = k_fold(data.shape[2], K)
@@ -101,6 +111,8 @@ def hyperparam_gridsearch(data, warp_penalties=(0.1,), time_penalties=(0.1,),
                           crossval_method='kfold', K=5, max_crossval_fits=np.inf,
                           fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
                           **model_args):
+    """Performs cross-validation over a grid of warp and time regularization penalties.
+    """
 
     # TODO - make this more flexible to try other types of regularization
     warp_reg = lambda s: curvature(scale=s, power=1)
