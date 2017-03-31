@@ -33,7 +33,7 @@ plt.close()
 # Do hyperparameter serach by cross-validation
 gridsearch_args = {
     'n_components': 1,
-    'warp_penalties': np.logspace(-5, -1, 8),
+    'warp_penalties': np.logspace(-5, 2, 8),
     'time_penalties': np.logspace(-2, 4, 8),
     'fit_kw': {'niter': (250,500), 'progressbar': False, 'lr': (0.1,0.01)}
 }
