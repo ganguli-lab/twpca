@@ -36,6 +36,7 @@ def initialize_new_vars(sess, var_list=None):
     """
     sess.run(tf.variables_initializer(get_uninitialized_vars(sess, var_list)))
 
+
 def stable_rank(matrix):
     """Computes the stable rank of a matrix
 
