@@ -3,6 +3,7 @@ TWPCA utilities
 """
 import numpy as np
 import tensorflow as tf
+from sklearn.decomposition import NMF, TruncatedSVD
 
 __all__ = ['get_uninitialized_vars', 'initialize_new_vars', 'stable_rank']
 
@@ -59,7 +60,7 @@ def stable_rank(matrix):
     return svals_squared.sum() / svals_squared.max()
 
 
-def compute_lowrank_factors(data, n_components, fit_trial_factors, last_idx, scale=1.0):
+def compute_lowrank_factors(data, n_components, fit_trial_factors, nonneg, last_idx, scale=1.0):
     """Gets initial values for factor matrices by SVD on trial-averaged data
 
     Args:
@@ -69,14 +70,11 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, last_idx, sca
         last_idx: nd-array, list of ints holding last index before trial end
         scale: scale neuron and time factors by this amount, default 1.0
     """
-    # do svd on trial-averaged data matrix
-    # TODO: use randomized/truncated SVD to speed this up
-    u, s, v = np.linalg.svd(np.nanmean(data, axis=0), full_matrices=False)
-    sqs = np.sqrt(s) * scale
-
-    # set neuron and time factors to top singular vectors
-    time_fctr = (u[:, :n_components] * sqs[:n_components]).astype(np.float32)
-    neuron_fctr = (v[:n_components].T * sqs[:n_components]).astype(np.float32)
+    # do matrix decomposition on trial-averaged data matrix
+    DecompModel = NMF if nonneg else TruncatedSVD
+    model = DecompModel(n_components=n_components)
+    time_fctr = model.fit_transform(np.nanmean(data, axis=0)).astype(np.float32)
+    neuron_fctr = np.transpose(model.components_).astype(np.float32)
 
     if not fit_trial_factors:
         return None, time_fctr, neuron_fctr
