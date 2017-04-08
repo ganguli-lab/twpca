@@ -13,6 +13,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
                  trial_regularizer=l2(1e-6),
                  time_regularizer=l2(1e-6),
                  neuron_regularizer=l2(1e-6),
+                 nonneg=False,
                  fit_trial_factors=False,
                  warptype='nonlinear',
                  warpinit='identity',
@@ -27,6 +28,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
             trial_regularizer (optional): regularization on the trial factors (default: l2(1e-6))
             time_regularizer (optional): regularization on the time factors (default: l2(1e-6))
             neuron_regularizer (optional): regularization on the neuron factors (default: l2(1e-6))
+            nonneg (optional): whether latent factors are constrained to be nonnegative (default: False)
             fit_trial_factors (optional): whether or not to fit weights on each trial, in addition
                 to the neuron and time factors (default: False)
             warptype: type of warps to allow ('nonlinear', 'affine', 'shift', or 'scale'). The
@@ -42,6 +44,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
         self.warptype = warptype
         self.warpinit = warpinit
         self.origin_idx = origin_idx
+        self.nonneg = nonneg
 
         # store regularization terms (these will match the variables in _params)
         self._regularizers = {
@@ -51,8 +54,9 @@ class TWPCA(BaseEstimator, TransformerMixin):
             'warp': warp_regularizer,
         }
 
-        # store tensorflow variables (parameters) and session
-        self._params = {}
+        # store tensorflow variables, parameters and session
+        self._raw_params = {} # tensorflow variables
+        self._params = {}     # model parameters (if nonneg=True, softplus transform applied to raw_params)
         self._sess = None
 
     def fit(self, X, optimizer=tf.train.AdamOptimizer, niter=1000, lr=1e-3, sess=None):
@@ -105,13 +109,19 @@ class TWPCA(BaseEstimator, TransformerMixin):
             n_timesteps, self.shared_length, self.warptype, self.warpinit, self.origin_idx, data=np_X, last_idx=self.last_idx)
 
         # Initialize factor matrices
-        trial_init, time_init, neuron_init = utils.compute_lowrank_factors(np_X, self.n_components, self.fit_trial_factors, self.last_idx)
+        trial_init, time_init, neuron_init = utils.compute_lowrank_factors(np_X, self.n_components, self.fit_trial_factors, self.nonneg, self.last_idx)
 
         # create tensorflow variables for factor matrices
-        self._params['time'] = tf.Variable(time_init, name="time_factors")
-        self._params['neuron'] = tf.Variable(neuron_init, name="neuron_factors")
+        self._raw_params['time'] = tf.Variable(time_init, name="time_factors")
+        self._raw_params['neuron'] = tf.Variable(neuron_init, name="neuron_factors")
         if self.fit_trial_factors:
-            self._params['trial'] = tf.Variable(trial_init, name="trial_factors")
+            self._raw_params['trial'] = tf.Variable(trial_init, name="trial_factors")
+
+        rectifier = tf.nn.softplus if self.nonneg else tf.identity
+        self._params['time'] = rectifier(self._raw_params['time'])
+        self._params['neuron'] = rectifier(self._raw_params['neuron'])
+        if self.fit_trial_factors:
+            self._params['trial'] = rectifier(self._raw_params['trial'])
 
         # warped time factors warped for each trial
         warped_time_factors = warp.warp(tf.tile(tf.expand_dims(self._params['time'], [0]), [n_trials, 1, 1]), self._params['warp'])
@@ -137,7 +147,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
         # create train_op
         self._lr = tf.placeholder(tf.float32, name="learning_rate")
         self._opt = optimizer(self._lr)
-        var_list = [v for k, v in self._params.items() if k != 'warp'] + list(warp_vars)
+        var_list = [v for k, v in self._raw_params.items() if k != 'warp'] + list(warp_vars)
         self._train_op = self._opt.minimize(self.objective, var_list=var_list)
 
         # initialize variables

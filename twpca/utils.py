@@ -3,6 +3,7 @@ TWPCA utilities
 """
 import numpy as np
 import tensorflow as tf
+from sklearn.decomposition import NMF, TruncatedSVD
 
 __all__ = ['get_uninitialized_vars', 'initialize_new_vars', 'stable_rank']
 
@@ -59,7 +60,7 @@ def stable_rank(matrix):
     return svals_squared.sum() / svals_squared.max()
 
 
-def compute_lowrank_factors(data, n_components, fit_trial_factors, last_idx, scale=1.0):
+def compute_lowrank_factors(data, n_components, fit_trial_factors, nonneg, last_idx, scale=1.0):
     """Gets initial values for factor matrices by SVD on trial-averaged data
 
     Args:
@@ -69,14 +70,25 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, last_idx, sca
         last_idx: nd-array, list of ints holding last index before trial end
         scale: scale neuron and time factors by this amount, default 1.0
     """
-    # do svd on trial-averaged data matrix
-    # TODO: use randomized/truncated SVD to speed this up
-    u, s, v = np.linalg.svd(np.nanmean(data, axis=0), full_matrices=False)
-    sqs = np.sqrt(s) * scale
+    # do matrix decomposition on trial-averaged data matrix
+    DecompModel = NMF if nonneg else TruncatedSVD
+    model = DecompModel(n_components=n_components)
+    time_fctr = model.fit_transform(np.nanmean(data, axis=0))
+    neuron_fctr = np.transpose(model.components_)
 
-    # set neuron and time factors to top singular vectors
-    time_fctr = (u[:, :n_components] * sqs[:n_components]).astype(np.float32)
-    neuron_fctr = (v[:n_components].T * sqs[:n_components]).astype(np.float32)
+    # rescale factors to same length
+    s_time = np.linalg.norm(time_fctr, axis=0)
+    s_neuron = np.linalg.norm(neuron_fctr, axis=0)
+    s = np.sqrt(s_time * s_neuron)
+
+    time_fctr = (time_fctr * s / s_time).astype(np.float32)
+    neuron_fctr = (neuron_fctr * s / s_neuron).astype(np.float32)
+
+    # apply inverse softplus
+    if nonneg:
+        inv_softplus = lambda y: np.log(np.exp(y + 1e-5) - 1)
+        time_fctr = inv_softplus(time_fctr)
+        neuron_fctr = inv_softplus(neuron_fctr)
 
     if not fit_trial_factors:
         return None, time_fctr, neuron_fctr
