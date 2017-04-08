@@ -84,6 +84,12 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, nonneg, last_
     time_fctr = (time_fctr * s / s_time).astype(np.float32)
     neuron_fctr = (neuron_fctr * s / s_neuron).astype(np.float32)
 
+    # apply inverse softplus
+    if nonneg:
+        inv_softplus = lambda y: np.log(np.exp(y + 1e-5) - 1)
+        time_fctr = inv_softplus(time_fctr)
+        neuron_fctr = inv_softplus(neuron_fctr)
+
     if not fit_trial_factors:
         return None, time_fctr, neuron_fctr
 
