@@ -54,9 +54,9 @@ class TWPCA(BaseEstimator, TransformerMixin):
             'warp': warp_regularizer,
         }
 
-        # store tensorflow variables (parameters) and session
-        self._raw_params = {}
-        self._params = {}
+        # store tensorflow variables, parameters and session
+        self._raw_params = {} # tensorflow variables
+        self._params = {}     # model parameters (if nonneg=True, softplus transform applied to raw_params)
         self._sess = None
 
     def fit(self, X, optimizer=tf.train.AdamOptimizer, niter=1000, lr=1e-3, sess=None):

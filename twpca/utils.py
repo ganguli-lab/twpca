@@ -73,8 +73,16 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, nonneg, last_
     # do matrix decomposition on trial-averaged data matrix
     DecompModel = NMF if nonneg else TruncatedSVD
     model = DecompModel(n_components=n_components)
-    time_fctr = model.fit_transform(np.nanmean(data, axis=0)).astype(np.float32)
-    neuron_fctr = np.transpose(model.components_).astype(np.float32)
+    time_fctr = model.fit_transform(np.nanmean(data, axis=0))
+    neuron_fctr = np.transpose(model.components_)
+
+    # rescale factors to same length
+    s_time = np.linalg.norm(time_fctr, axis=0)
+    s_neuron = np.linalg.norm(neuron_fctr, axis=0)
+    s = np.sqrt(s_time * s_neuron)
+
+    time_fctr = (time_fctr * s / s_time).astype(np.float32)
+    neuron_fctr = (neuron_fctr * s / s_neuron).astype(np.float32)
 
     if not fit_trial_factors:
         return None, time_fctr, neuron_fctr
