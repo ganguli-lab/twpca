@@ -40,7 +40,7 @@ def leave_n_out(N, K):
         test_idx = idx[r]
         yield train_idx, test_idx    
 
-def cross_validate(model, data, method, K, max_fits=np.inf, **fit_kw):
+def cross_validate(model, data, method, K, max_crossval=np.inf, **fit_kw):
     """Runs specified cross-validation method.
 
     Args:
@@ -102,12 +102,13 @@ def cross_validate(model, data, method, K, max_fits=np.inf, **fit_kw):
 
         # terminate early if user is impatient
         nfits += 1
-        if nfits >= max_fits:
+        if nfits >= max_crossval:
             break
 
     return results
 
-def hyperparam_search(data, n_components, warp_scales, time_scales, warp_reg=None, time_reg=None,
+def hyperparam_search(data, n_components, warp_scales, time_scales,
+                      warp_reg=None, time_reg=None,
                       crossval_method='kfold', K=5, max_crossval=np.inf,
                       fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
                       **model_kw):
@@ -116,25 +117,27 @@ def hyperparam_search(data, n_components, warp_scales, time_scales, warp_reg=Non
     """
 
     # defaults for warp and time regularization
-    warp_reg = lambda s: curvature(scale=s, power=1) if warp_reg is None else warp_reg
-    time_reg = lambda s: curvature(scale=s, power=2, axis=0)  if time_reg is None else time_reg
+    if warp_reg is None:
+        warp_reg = lambda s: curvature(scale=s, power=1)
+    if time_reg is None:
+        time_reg = lambda s: curvature(scale=s, power=2, axis=0)
 
     # initialize results dict
     results = {
+        'n_components': [],
         'warp_scale': [],
         'time_scale': [],
         'crossval_data': [],
         'mean_test': [],
         'mean_train': [],
-        'mean_warped_rank': [],
-        'mean_unwarped_rank': []
+        'mean_dim_change': []
     }
 
     # run cross-validation for all specified hyperparameters
-    for nc, ws, ts in tqdm(zip(n_components, warp_scales, time_scales)):
+    for nc, ws, ts in zip(tqdm(n_components), warp_scales, time_scales):
 
         model = TWPCA(nc, warp_regularizer=warp_reg(ws), time_regularizer=time_reg(ts), **model_kw)
-        _result = cross_validate(model, data, crossval_method, K, max_crossval=max_crossval_fits, **fit_kw)
+        _result = cross_validate(model, data, crossval_method, K, max_crossval=max_crossval, **fit_kw)
 
         results['n_components'].append(nc)
         results['warp_scale'].append(ws)
@@ -142,13 +145,12 @@ def hyperparam_search(data, n_components, warp_scales, time_scales, warp_reg=Non
         results['crossval_data'].append(_result)
         results['mean_test'].append(np.mean([r['test_error'] for r in _result]))
         results['mean_train'].append(np.mean([r['train_error'] for r in _result]))
-        results['mean_unwarped_rank'].append(np.mean([r['warped_rank'] for r in _result]))
-        results['mean_warped_rank'].append(np.mean([r['unwarped_rank'] for r in _result]))
+        results['mean_dim_change'].append(np.mean([r['warped_rank']-r['unwarped_rank'] for r in _result]))
 
     return results
 
 def err_per_component(data, component_range,
-                      fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False)
+                      fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
                       **model_args):
     """Compares vanilla PCA to twPCA searching over number of components
     """
