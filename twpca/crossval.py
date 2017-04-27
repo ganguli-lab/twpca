@@ -9,7 +9,7 @@ from .model import TWPCA
 from .regularizers import curvature
 from .utils import stable_rank
 
-__all__ = ['cross_validate', 'hyperparam_gridsearch']
+__all__ = ['cross_validate', 'hyperparam_search', 'err_per_component']
 
 def k_fold(N, K):
     """K-fold cross validation iterator
@@ -107,37 +107,75 @@ def cross_validate(model, data, method, K, max_fits=np.inf, **fit_kw):
 
     return results
 
-def hyperparam_gridsearch(data, warp_penalties=(0.1,), time_penalties=(0.1,),
-                          crossval_method='kfold', K=5, max_crossval_fits=np.inf,
-                          fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
-                          **model_args):
-    """Performs cross-validation over a grid of warp and time regularization penalties.
+def hyperparam_search(data, n_components, warp_scales, time_scales, warp_reg=None, time_reg=None,
+                      crossval_method='kfold', K=5, max_crossval=np.inf,
+                      fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
+                      **model_kw):
+    """Performs cross-validation over number of components, warp regularization scale, and
+    temporal regularization scale.
     """
 
-    # TODO - make this more flexible to try other types of regularization
-    warp_reg = lambda s: curvature(scale=s, power=1)
-    time_reg = lambda s: curvature(scale=s, power=2, axis=0)
+    # defaults for warp and time regularization
+    warp_reg = lambda s: curvature(scale=s, power=1) if warp_reg is None else warp_reg
+    time_reg = lambda s: curvature(scale=s, power=2, axis=0)  if time_reg is None else time_reg
 
-    I, J = len(warp_penalties), len(time_penalties)
-    results = np.empty((I, J), dtype=object)
+    # initialize results dict
+    results = {
+        'warp_scale': [],
+        'time_scale': [],
+        'crossval_data': [],
+        'mean_test': [],
+        'mean_train': [],
+        'mean_warped_rank': [],
+        'mean_unwarped_rank': []
+    }
 
-    warp_penalties = np.tile(np.atleast_2d(warp_penalties), (J, 1)).T
-    time_penalties = np.tile(np.atleast_2d(time_penalties), (I, 1))
+    # run cross-validation for all specified hyperparameters
+    for nc, ws, ts in tqdm(zip(n_components, warp_scales, time_scales)):
 
-    for i, j in tqdm(list(itertools.product(range(I), range(J)))):
-        warp_penalty = warp_penalties[i, j]
-        time_penalty = time_penalties[i, j]
+        model = TWPCA(nc, warp_regularizer=warp_reg(ws), time_regularizer=time_reg(ts), **model_kw)
+        _result = cross_validate(model, data, crossval_method, K, max_crossval=max_crossval_fits, **fit_kw)
 
-        model = TWPCA(**model_args, warp_regularizer=warp_reg(warp_penalty), time_regularizer=time_reg(time_penalty))
-        results[i, j] = cross_validate(model, data, crossval_method, K, max_fits=max_crossval_fits, **fit_kw)
+        results['n_components'].append(nc)
+        results['warp_scale'].append(ws)
+        results['time_scale'].append(ts)
+        results['crossval_data'].append(_result)
+        results['mean_test'].append(np.mean([r['test_error'] for r in _result]))
+        results['mean_train'].append(np.mean([r['train_error'] for r in _result]))
+        results['mean_unwarped_rank'].append(np.mean([r['warped_rank'] for r in _result]))
+        results['mean_warped_rank'].append(np.mean([r['unwarped_rank'] for r in _result]))
 
-    N = len(results[-1, -1])
-    summary_stats = ['test_error', 'train_error', 'warped_rank', 'unwarped_rank']
-    summary = {stat: np.empty((I, J, N)) for stat in summary_stats}
-    for stat in summary_stats:
-        for i, j in itertools.product(range(I), range(J)):
-            summary[stat][i, j, :] = [np.mean(result[stat]) for result in results[i, j]]
-    summary['warp_penalties'] = warp_penalties
-    summary['time_penalties'] = time_penalties
+    return results
 
-    return summary, results
+def err_per_component(data, component_range,
+                      fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False)
+                      **model_args):
+    """Compares vanilla PCA to twPCA searching over number of components
+    """
+
+    # basic attributes
+    n_trials, n_timepoints, n_neurons = data.shape
+    data_norm = np.linalg.norm(data.ravel())
+
+    # compute error for trial-average PCA
+    pca_rel_err = []
+    u, s, v = np.linalg.svd(data.mean(axis=0), full_matrices=False)
+    
+    for rank in component_range:
+        pred = np.dot(u[:, :rank] * s[:rank], v[:rank])[None, :, :]
+        resid = data - np.tile(pred, (n_trials, 1, 1))
+        pca_rel_err.append(np.linalg.norm(resid.ravel()) / data_norm)
+
+    # compute error for twPCA
+    twpca_rel_err = []
+    for n_components in component_range:
+        model = TWPCA(n_components, **model_args)
+
+        tf.reset_default_graph()
+        sess = tf.Session()
+        model.fit(data, sess=sess, **fit_kw)
+
+        resid = data - model._sess.run(model.X_pred)
+        twpca_rel_err.append(np.linalg.norm(resid.ravel()) / data_norm)
+
+    return pca_rel_err, twpca_rel_err
