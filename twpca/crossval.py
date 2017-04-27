@@ -91,8 +91,8 @@ def cross_validate(model, data, method, K, max_crossval=np.inf, **fit_kw):
              'unwarped_rank': np.array(unwarped_rank),
              'test_idx': test,
              'train_idx': train,
-             'train_error': model.obj_history[-1],
-             'test_error': np.sum(resid),
+             'train_error': model._sess.run(model.recon_cost),
+             'test_error': np.sum(resid) / len(testdata.ravel()),
              'obj_history': model.obj_history
             }
         )
