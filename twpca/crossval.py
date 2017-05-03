@@ -11,27 +11,27 @@ from .utils import stable_rank
 
 __all__ = ['cross_validate', 'hyperparam_search', 'err_per_component']
 
-def k_fold(N, K):
+def k_fold_iter(N, K):
     """K-fold cross validation iterator
 
     Args:
         N: int, number of datapoitns
         K: int, number of folds
     """
-    idx = np.arange(N)
+    idx = np.random.permutation(N)
     for k in range(K):
         train_idx = idx[idx % K != k]
         test_idx = idx[idx % K == k]
         yield train_idx, test_idx
 
-def leave_n_out(N, K):
+def leave_k_out_iter(N, K):
     """Leave K out cross validation iterator
 
     Args:
         N: int, number of datapoitns
         K: int, number to leave out in training set
     """
-    idx = np.arange(N)
+    idx = np.random.permutation(N)
     i = 0
     while i < N-1:
         r = range(i, i + n)
@@ -40,7 +40,7 @@ def leave_n_out(N, K):
         test_idx = idx[r]
         yield train_idx, test_idx    
 
-def cross_validate(model, data, method, K, max_crossval=np.inf, **fit_kw):
+def cross_validate(model, data, method, K, max_fits=np.inf, seed=1234, **fit_kw):
     """Runs specified cross-validation method.
 
     Args:
@@ -49,14 +49,23 @@ def cross_validate(model, data, method, K, max_crossval=np.inf, **fit_kw):
         method: string specifying method {'kfold', 'leaveout'}
         K: int, crossvalidation parameter
 
+    Keyword Args:
+        max_fits: int, maximum number of partitions to train on
+        seed: int, passed to numpy.random.seed()
+        **fit_kw: additional keywords passed to model.fit
+
     Returns:
         results: dict, model parameters and metrics calculated for all sessions
     """
 
+    # set random state
+    np.random.seed(seed)
+
+    # set up cross validation partitions
     if method == 'kfold':
-        partitions = k_fold(data.shape[2], K)
+        partitions = k_fold_iter(data.shape[2], K)
     elif method == 'leaveout':
-        partitions = leave_k_out(data.shape[2], K)
+        partitions = leave_k_out_iter(data.shape[2], K)
     else:
         raise ValueError('Cross-validation method not recognized.')
 
@@ -68,10 +77,9 @@ def cross_validate(model, data, method, K, max_crossval=np.inf, **fit_kw):
         testdata = np.atleast_3d(data[:, :, test])
 
         # fit model to training set
-        tf.reset_default_graph()
+        tf.reset_default_graph() # TODO (ben): better session management
         sess = tf.Session()
         model.fit(traindata, sess=sess, **fit_kw)
-        # TODO - warmstart fits?
 
         # assess dimensionality of warped vs unwarped testdata
         warped_testdata = model.transform(testdata)

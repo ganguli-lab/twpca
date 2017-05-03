@@ -66,9 +66,9 @@ class TWPCA(BaseEstimator, TransformerMixin):
             X: 3D numpy array with dimensions [n_trials, n_timepoints, n_neurons]
             optimizer (optional): a tf.train.Optimizer class (default: AdamOptimizer)
             niter (optional): number of iterations to run the optimizer for (default: 1000)
-            progressbar (optional): whether to print a progressbar (default: True)
             sess (optional): tensorflow session to use for running the computation. If None,
                 then a new session is created. (default: None)
+            progressbar (optional): whether to print a progressbar (default: True)
         """
 
         # set the shared length to the number of timesteps if not already defined
