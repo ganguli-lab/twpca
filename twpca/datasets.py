@@ -100,9 +100,8 @@ def jittered_population(n_trial=100, n_time=130, n_neuron=50, n_events=3, tau=10
     impulse_response = np.exp(-np.arange(n_time)/float(tau))
     impulse_response /= impulse_response.sum()
 
-    #latents = np.array([np.convolve(e, impulse_response, mode='full')[:n_time] for e in events])
-    latents = convolve1d(events, impulse_response, axis=1)[:n_time]
-
+    latents = np.array([np.convolve(e, impulse_response, mode='full')[:n_time] for e in events])
+    
     # Coupling from one dimensional latent state to each neuron
     readout_weights = np.random.rand(n_neuron) + 0.1
 

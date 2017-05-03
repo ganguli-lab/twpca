@@ -4,7 +4,7 @@ TWPCA cross-validation and hyperparameter search routines
 import numpy as np
 import tensorflow as tf
 import itertools
-from tqdm import tqdm
+from tqdm import tqdm, trange
 from .model import TWPCA
 from .regularizers import curvature
 from .utils import stable_rank
@@ -34,8 +34,8 @@ def leave_k_out_iter(N, K):
     idx = np.random.permutation(N)
     i = 0
     while i < N-1:
-        r = range(i, i + n)
-        i += n
+        r = range(i, i + K)
+        i += K
         train_idx = np.setdiff1d(idx, r)
         test_idx = idx[r]
         yield train_idx, test_idx    
@@ -73,8 +73,8 @@ def cross_validate(model, data, method, K, max_fits=np.inf, seed=1234, **fit_kw)
     results = []
     for train, test in partitions:
         # partition dataset
-        traindata = np.atleast_3d(data[:, :, train])
-        testdata = np.atleast_3d(data[:, :, test])
+        traindata = data[:, :, train]
+        testdata = data[:, :, test]
 
         # fit model to training set
         tf.reset_default_graph() # TODO (ben): better session management
@@ -110,18 +110,39 @@ def cross_validate(model, data, method, K, max_fits=np.inf, seed=1234, **fit_kw)
 
         # terminate early if user is impatient
         nfits += 1
-        if nfits >= max_crossval:
+        if nfits >= max_fits:
             break
 
     return results
 
 def hyperparam_search(data, n_components, warp_scales, time_scales,
                       warp_reg=None, time_reg=None,
-                      crossval_method='kfold', K=5, max_crossval=np.inf,
+                      crossval_method='kfold', K=5, max_fits=np.inf,
                       fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
                       **model_kw):
     """Performs cross-validation over number of components, warp regularization scale, and
     temporal regularization scale.
+
+    Args:
+        data: array-like, trials x time x neurons dataset
+        n_components: sequence of ints, number of components in each model
+        warp_scales: sequence of floats, scale of warp regularization in each model
+        time_scales: sequence of floats, scale of time factor regularization in each model
+
+    Keywork Args:
+        warp_reg: function, takes scalar and outputs a regularization term (in tensorflow) for
+                    the warps. By default, warp_reg = twpca.regularizers.curvature(s, power=1).
+        time_reg: function, takes scalar and outputs a regularization term (in tensorflow) for
+                    the time factors. By default,
+                    time_reg = twpca.regularizers.curvature(s, power=2, axis=0).
+        crossval_method: str, specifies cross validation. One of {'kfold' (default), 'leavout'}.
+        K: int, cross validation parameter. For example, K = 5 specifies 5-fold cross validation
+                    when crossval_method = 'kfold', and K = 1 specifies leave-1-out validation
+                    when crossval_method = 'leaveout'
+        max_fits: int, number of fits per model. For example max_fits = 1 means that only a single
+                  training and test set are evaluated (default: np.inf).
+        fit_kw: dict, keyword arguments passed to model.fit
+        **model_kw: additional keywords are passed to twpca.TWPCA(...)
     """
 
     # defaults for warp and time regularization
@@ -145,7 +166,7 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
     for nc, ws, ts in zip(tqdm(n_components), warp_scales, time_scales):
 
         model = TWPCA(nc, warp_regularizer=warp_reg(ws), time_regularizer=time_reg(ts), **model_kw)
-        _result = cross_validate(model, data, crossval_method, K, max_crossval=max_crossval, **fit_kw)
+        _result = cross_validate(model, data, crossval_method, K, max_fits=max_fits, **fit_kw)
 
         results['n_components'].append(nc)
         results['warp_scale'].append(ws)
