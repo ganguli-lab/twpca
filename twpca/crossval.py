@@ -89,8 +89,8 @@ def cross_validate(model, data, method, K, max_fits=np.inf, seed=1234, **fit_kw)
             unwarped_rank.append(stable_rank(testdata[:, :, n]))
 
         # evaluate test error
-        time_factors = sess.run(model._warped_time_factors).reshape(-1, model.n_components)
-        _, resid, _, _ = np.linalg.lstsq(time_factors, testdata.reshape(-1, len(test)))
+        X_pred = model.predict(testdata)
+        test_error = np.mean((testdata - X_pred)**2)
 
         # compile results
         results.append(
@@ -100,7 +100,7 @@ def cross_validate(model, data, method, K, max_fits=np.inf, seed=1234, **fit_kw)
              'test_idx': test,
              'train_idx': train,
              'train_error': model._sess.run(model.recon_cost),
-             'test_error': np.sum(resid) / len(testdata.ravel()),
+             'test_error': test_error,
              'obj_history': model.obj_history
             }
         )

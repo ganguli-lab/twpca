@@ -184,7 +184,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
         Note: this uses the data that was used to initialize and fit the time parameters.
 
         Returns:
-            [n_trial, shared_length, n_neuron] Tensor of data warped into shared space
+            [n_trials, shared_length, n_neurons] Tensor of data warped into shared space
         """
         if X is None:
             X_tf = self.X
@@ -196,6 +196,40 @@ class TWPCA(BaseEstimator, TransformerMixin):
             raise ValueError("X must be a numpy array or tensorflow tensor")
 
         return self._sess.run(warp.warp(X_tf, self._inv_warp))
+
+    def predict(self, X=None):
+        """Return model prediction of activity on each trial.
+
+        Note: If no dataset is provided, the prediction of the model on training data
+              (i.e. provided to `model.fit` function) is returned. If a new dataset
+              is provided, the temporal factors and warps are re-used, and the neuron
+              factors are fit.
+        """
+        if X is None:
+            X_pred = self._sess.run(self.X_pred)
+        elif isinstance(X, np.ndarray):
+            # input is a (trial x time x neuron) dataset of unwarped data
+            n_trials, n_timepoints, n_neurons = X.shape
+            # grab the warped temporal factors
+            if self.fit_trial_factors:
+                warped_factors = self._sess.run(self._warped_time_factors)
+                trial_factors = self._sess.run(self.self._params['trial'])
+                warped_factors *= trial_factors[:, None, :] # broadcast multiply across trials
+            else:
+                warped_factors = self._sess.run(self._warped_time_factors)
+            # reshape the factors and data into matrices
+            # time factors is (trial-time x components); X_unf is (trial-time x neurons)
+            time_factors = warped_factors.reshape(-1, self.n_components)
+            X_unf = X.reshape(-1, n_neurons)
+            # mask nan values (only evaluate when all neurons are recorded)
+            mask = np.all(np.isfinite(X_unf), axis=-1)
+            # do a least-squares solve to fit the neuron factors
+            neuron_factors = np.linalg.lstsq(time_factors[mask, :], X_unf[mask, :])[0]
+            # reconstruct and reshape the predicted activity
+            X_pred = np.dot(neuron_factors.T, time_factors.T) # (neurons x trials-time)
+            X_pred = X_pred.T.reshape(*X.shape) # (trials x time x neuron)
+
+        return X_pred
 
     @property
     def regularization(self):
