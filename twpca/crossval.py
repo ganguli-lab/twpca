@@ -9,7 +9,7 @@ from .model import TWPCA
 from .regularizers import curvature
 from .utils import stable_rank
 
-__all__ = ['cross_validate', 'hyperparam_search', 'err_per_component']
+__all__ = ['cross_validate', 'hyperparam_search']
 
 def k_fold_iter(N, K):
     """K-fold cross validation iterator
@@ -178,9 +178,9 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
 
     return results
 
-def err_per_component(data, component_range,
-                      fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
-                      **model_args):
+def error_per_component(data, component_range,
+                        fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
+                        **model_args):
     """Compares vanilla PCA to twPCA searching over number of components
     """
 
