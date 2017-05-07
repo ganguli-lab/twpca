@@ -87,3 +87,8 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+examples/crossval-demo/*.pickle
+examples/crossval-demo/nohup.out
+examples/crossval-demo/*.png
+

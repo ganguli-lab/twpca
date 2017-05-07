@@ -59,7 +59,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
         self._params = {}     # model parameters (if nonneg=True, softplus transform applied to raw_params)
         self._sess = None
 
-    def fit(self, X, optimizer=tf.train.AdamOptimizer, niter=1000, lr=1e-3, sess=None):
+    def fit(self, X, optimizer=tf.train.AdamOptimizer, niter=1000, lr=1e-3, sess=None, progressbar=True):
         """Fit the twPCA model
 
         Args:
@@ -68,6 +68,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
             niter (optional): number of iterations to run the optimizer for (default: 1000)
             sess (optional): tensorflow session to use for running the computation. If None,
                 then a new session is created. (default: None)
+            progressbar (optional): whether to print a progressbar (default: True)
         """
 
         # set the shared length to the number of timesteps if not already defined
@@ -124,14 +125,14 @@ class TWPCA(BaseEstimator, TransformerMixin):
             self._params['trial'] = rectifier(self._raw_params['trial'])
 
         # warped time factors warped for each trial
-        warped_time_factors = warp.warp(tf.tile(tf.expand_dims(self._params['time'], [0]), [n_trials, 1, 1]), self._params['warp'])
+        self._warped_time_factors = warp.warp(tf.tile(tf.expand_dims(self._params['time'], [0]), [n_trials, 1, 1]), self._params['warp'])
 
         if self.fit_trial_factors:
             # trial i, time j, factor k, neuron n
-            self.X_pred = tf.einsum('ik,ijk,nk->ijn', self._params['trial'], warped_time_factors, self._params['neuron'])
+            self.X_pred = tf.einsum('ik,ijk,nk->ijn', self._params['trial'], self._warped_time_factors, self._params['neuron'])
         else:
             # trial i, time j, factor k, neuron n
-            self.X_pred = tf.einsum('ijk,nk->ijn', warped_time_factors, self._params['neuron'])
+            self.X_pred = tf.einsum('ijk,nk->ijn', self._warped_time_factors, self._params['neuron'])
 
         # total objective
         # only include terms that were not NaN in the original data matrix
@@ -155,7 +156,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
 
         # run the optimizer
         for train_args in zip(niter, lr):
-            self.train(*train_args)
+            self.train(*train_args, progressbar)
 
         return self
 
@@ -183,7 +184,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
         Note: this uses the data that was used to initialize and fit the time parameters.
 
         Returns:
-            [n_trial, shared_length, n_neuron] Tensor of data warped into shared space
+            [n_trials, shared_length, n_neurons] Tensor of data warped into shared space
         """
         if X is None:
             X_tf = self.X
@@ -195,6 +196,57 @@ class TWPCA(BaseEstimator, TransformerMixin):
             raise ValueError("X must be a numpy array or tensorflow tensor")
 
         return self._sess.run(warp.warp(X_tf, self._inv_warp))
+
+    def predict(self, X=None):
+        """Return model prediction of activity on each trial.
+
+        Args:
+            X (optional) : 3D numpy array with shape [n_trials, n_timepoints, n_neurons]
+
+        Note: If `X` is not provided, the prediction of the model on training data
+              (i.e. provided to `model.fit` function) is returned. If a new `X` is
+              provided then it is assumed these are held-out neurons; in this case,
+              `X` should have the same n_trials and n_timepoints as the training data
+              provided to `model.fit`. The temporal factors and warps are re-used, and
+              the neuron factors are newly fit in a least-squares sense.
+
+        Returns:
+            X_pred : 3D numpy array with shape [n_trials, n_timepoints, n_neurons] holding
+                     low-dimensional model prediction.
+        """
+        if self._sess is None:
+            raise ValueError('No model has been fit - must call TWPCA.fit() before TWPCA.predict().')
+
+        if X is None:
+            X_pred = self._sess.run(self.X_pred)
+        elif isinstance(X, np.ndarray):
+            # input is a (trial x time x neuron) dataset of unwarped data
+            n_trials, n_timepoints, n_neurons = X.shape
+            # grab the warped temporal factors
+            if self.fit_trial_factors:
+                warped_factors = self._sess.run(self._warped_time_factors)
+                trial_factors = self._sess.run(self.self._params['trial'])
+                warped_factors *= trial_factors[:, None, :] # broadcast multiply across trials
+            else:
+                warped_factors = self._sess.run(self._warped_time_factors)
+            # check input size
+            if warped_factors.shape[0] != n_trials:
+                raise ValueError('Data does not have the expected number of trials.')
+            if warped_factors.shape[1] != n_timepoints:
+                raise ValueError('Data does not have the expected number of timepoints.')
+            # reshape the factors and data into matrices
+            # time factors is (trial-time x components); X_unf is (trial-time x neurons)
+            time_factors = warped_factors.reshape(-1, self.n_components)
+            X_unf = X.reshape(-1, n_neurons)
+            # mask nan values (only evaluate when all neurons are recorded)
+            mask = np.all(np.isfinite(X_unf), axis=-1)
+            # do a least-squares solve to fit the neuron factors
+            neuron_factors = np.linalg.lstsq(time_factors[mask, :], X_unf[mask, :])[0]
+            # reconstruct and reshape the predicted activity
+            X_pred = np.dot(neuron_factors.T, time_factors.T) # (neurons x trials-time)
+            X_pred = X_pred.T.reshape(*X.shape) # (trials x time x neuron)
+
+        return X_pred
 
     @property
     def regularization(self):
