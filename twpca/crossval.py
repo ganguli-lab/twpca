@@ -129,12 +129,25 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
         warp_scales: sequence of floats, scale of warp regularization in each model
         time_scales: sequence of floats, scale of time factor regularization in each model
 
+    Usage:
+        Hyperparameters are provided as sequences, which are combined sequentially to form
+        each model. For example, the following code fits three models. The first model has 1
+        component, a warp regularization scale of 1e-3, and a time regularization scale
+        of 1e-2. The second model has 2 components, a stronger penalty scale on the warps
+        (1e-2), and a stronger penalty scale on the temporal factors (1e-1). And so forth.
+        ```
+        n_components = [1, 2, 3]
+        warp_scales = [1e-3, 1e-2, 1e-2]
+        time_scales = [1e-2, 1e-1, 1e-1]
+        hyperparam_search(data, n_components, warp_scales, time_scales, ...)
+        ```
+
     Keywork Args:
         warp_reg: function, takes scalar and outputs a regularization term (in tensorflow) for
-                    the warps. By default, warp_reg = twpca.regularizers.curvature(s, power=1).
+                    the warps. By default, `warp_reg = twpca.regularizers.curvature(s, power=1)`.
         time_reg: function, takes scalar and outputs a regularization term (in tensorflow) for
                     the time factors. By default,
-                    time_reg = twpca.regularizers.curvature(s, power=2, axis=0).
+                    `time_reg = twpca.regularizers.curvature(s, power=2, axis=0)`.
         crossval_method: str, specifies cross validation. One of {'kfold' (default), 'leavout'}.
         K: int, cross validation parameter. For example, K = 5 specifies 5-fold cross validation
                     when crossval_method = 'kfold', and K = 1 specifies leave-1-out validation
@@ -143,6 +156,9 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
                   training and test set are evaluated (default: np.inf).
         fit_kw: dict, keyword arguments passed to model.fit
         **model_kw: additional keywords are passed to twpca.TWPCA(...)
+
+    Returns:
+        results: dict, contains parameters and statistics of fitted models
     """
 
     # defaults for warp and time regularization
@@ -178,35 +194,3 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
 
     return results
 
-def error_per_component(data, component_range,
-                        fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
-                        **model_args):
-    """Compares vanilla PCA to twPCA searching over number of components
-    """
-
-    # basic attributes
-    n_trials, n_timepoints, n_neurons = data.shape
-    data_norm = np.linalg.norm(data.ravel())
-
-    # compute error for trial-average PCA
-    pca_rel_err = []
-    u, s, v = np.linalg.svd(data.mean(axis=0), full_matrices=False)
-    
-    for rank in component_range:
-        pred = np.dot(u[:, :rank] * s[:rank], v[:rank])[None, :, :]
-        resid = data - np.tile(pred, (n_trials, 1, 1))
-        pca_rel_err.append(np.linalg.norm(resid.ravel()) / data_norm)
-
-    # compute error for twPCA
-    twpca_rel_err = []
-    for n_components in component_range:
-        model = TWPCA(n_components, **model_args)
-
-        tf.reset_default_graph()
-        sess = tf.Session()
-        model.fit(data, sess=sess, **fit_kw)
-
-        resid = data - model._sess.run(model.X_pred)
-        twpca_rel_err.append(np.linalg.norm(resid.ravel()) / data_norm)
-
-    return pca_rel_err, twpca_rel_err

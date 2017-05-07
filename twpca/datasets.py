@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import scipy.io as spio
-from scipy.ndimage import gaussian_filter1d, convolve1d
+from scipy.ndimage import gaussian_filter1d
 
 def jittered_neuron(t=None, feature=None, n_trial=61, jitter=1.0, gain=0.0, noise=0.05, seed=1234):
     """Generates a synthetic dataset of a single neuron with a jittered firing pattern.

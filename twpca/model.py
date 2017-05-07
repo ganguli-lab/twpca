@@ -200,11 +200,23 @@ class TWPCA(BaseEstimator, TransformerMixin):
     def predict(self, X=None):
         """Return model prediction of activity on each trial.
 
-        Note: If no dataset is provided, the prediction of the model on training data
-              (i.e. provided to `model.fit` function) is returned. If a new dataset
-              is provided, the temporal factors and warps are re-used, and the neuron
-              factors are fit.
+        Args:
+            X (optional) : 3D numpy array with shape [n_trials, n_timepoints, n_neurons]
+
+        Note: If `X` is not provided, the prediction of the model on training data
+              (i.e. provided to `model.fit` function) is returned. If a new `X` is
+              provided then it is assumed these are held-out neurons; in this case,
+              `X` should have the same n_trials and n_timepoints as the training data
+              provided to `model.fit`. The temporal factors and warps are re-used, and
+              the neuron factors are newly fit in a least-squares sense.
+
+        Returns:
+            X_pred : 3D numpy array with shape [n_trials, n_timepoints, n_neurons] holding
+                     low-dimensional model prediction.
         """
+        if self._sess is None:
+            raise ValueError('No model has been fit - must call TWPCA.fit() before TWPCA.predict().')
+
         if X is None:
             X_pred = self._sess.run(self.X_pred)
         elif isinstance(X, np.ndarray):
@@ -217,6 +229,11 @@ class TWPCA(BaseEstimator, TransformerMixin):
                 warped_factors *= trial_factors[:, None, :] # broadcast multiply across trials
             else:
                 warped_factors = self._sess.run(self._warped_time_factors)
+            # check input size
+            if warped_factors.shape[0] != n_trials:
+                raise ValueError('Data does not have the expected number of trials.')
+            if warped_factors.shape[1] != n_timepoints:
+                raise ValueError('Data does not have the expected number of timepoints.')
             # reshape the factors and data into matrices
             # time factors is (trial-time x components); X_unf is (trial-time x neurons)
             time_factors = warped_factors.reshape(-1, self.n_components)
