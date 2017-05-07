@@ -197,3 +197,35 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
 
     return results
 
+def error_per_component(data, component_range,
+                        fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
+                        **model_args):
+    """Compares vanilla PCA to twPCA searching over number of components
+    """
+
+    # basic attributes
+    n_trials, n_timepoints, n_neurons = data.shape
+    data_norm = np.linalg.norm(data.ravel())
+
+    # compute error for trial-average PCA
+    pca_rel_err = []
+    u, s, v = np.linalg.svd(data.mean(axis=0), full_matrices=False)
+
+    for rank in component_range:
+        pred = np.dot(u[:, :rank] * s[:rank], v[:rank])[None, :, :]
+        resid = data - np.tile(pred, (n_trials, 1, 1))
+        pca_rel_err.append(np.linalg.norm(resid.ravel()) / data_norm)
+
+    # compute error for twPCA
+    twpca_rel_err = []
+    for n_components in component_range:
+        model = TWPCA(n_components, **model_args)
+
+        tf.reset_default_graph()
+        sess = tf.Session()
+        model.fit(data, sess=sess, **fit_kw)
+
+        resid = data - model._sess.run(model.X_pred)
+        twpca_rel_err.append(np.linalg.norm(resid.ravel()) / data_norm)
+
+    return pca_rel_err, twpca_rel_err
