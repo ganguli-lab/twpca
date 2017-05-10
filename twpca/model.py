@@ -156,7 +156,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
 
         # run the optimizer
         for train_args in zip(niter, lr):
-            self.train(*train_args, progressbar)
+            self.train(*train_args, progressbar=progressbar)
 
         return self
 
