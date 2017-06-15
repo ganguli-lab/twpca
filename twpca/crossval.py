@@ -192,5 +192,8 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
         results['mean_train'].append(np.mean([r['train_error'] for r in _result]))
         results['mean_dim_change'].append(np.mean([r['warped_rank']-r['unwarped_rank'] for r in _result]))
 
+    for k in results.keys():
+        results[k] = np.array(results[k])
+
     return results
 
