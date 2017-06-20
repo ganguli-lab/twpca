@@ -6,6 +6,8 @@ import numpy as np
 from scipy.interpolate import interp1d
 import tensorflow as tf
 
+from .utils import correlate_nanmean
+
 
 def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_idx=None, data=None, last_idx=None):
     """Generate parameters and warping function.
@@ -54,7 +56,7 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
         for tidx, trial in enumerate(data):
             xcorr = np.zeros(n_timesteps)
             for n in range(num_neurons):
-                xcorr += np.correlate(psth[:, n], trial[:last_idx[tidx], n], mode='same')
+                xcorr += correlate_nanmean(psth[:, n], trial[:last_idx[tidx], n], mode='same')
             init_shifts.append(np.argmax(xcorr) - (last_idx[tidx] / 2))
         init_shifts = np.array(init_shifts)
         init_scales = np.ones((n_trials,))

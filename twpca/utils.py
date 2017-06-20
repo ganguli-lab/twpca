@@ -103,3 +103,13 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, nonneg, last_
             trial_fctr[k] = np.diag(np.linalg.pinv(time_fctr[:t]).dot(trial[:t]).dot(Bpinv.T))
         return trial_fctr, time_fctr, neuron_fctr
 
+
+def correlate_nanmean(x, y, **kwargs):
+    """Wrapper around np.correlate that handles NaNs."""
+    x_ = np.nan_to_num(x)
+    y_ = np.nan_to_num(y)
+    xcorr = np.correlate(x_, y_, **kwargs)
+    xcorr_count = np.correlate((~np.isnan(x)).astype(float),
+                               (~np.isnan(y)).astype(float), mode='same')
+    xcorr_avg = xcorr / xcorr_count
+    return xcorr_avg
