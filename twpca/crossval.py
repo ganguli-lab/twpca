@@ -11,16 +11,23 @@ from .utils import stable_rank
 
 __all__ = ['cross_validate', 'hyperparam_search']
 
-def cross_validate(model, data, nfits, censor_prob, seed=None, **fit_kw):
+def cross_validate(model, data, nfits, censor_prob, **fit_kw):
     """Runs cross-validation on TWPCA model.
+
+    Args
+    ---
+    model : TWPCA model instance
+    data (ndarray) : data tensor, trials x time x neurons
+    nfits (int) : number of cross-validation runs
+    censor_prob (float) : probability of setting element of data to nan
+
+    Note: additional keyword args are passed to model.fit(...)
     """
 
     # check inputs
     if censor_prob >= 1 or censor_prob < 0:
         print(censor_prob)
         raise ValueError('Censor probability must be greater than zero and less than one.')
-    if seed is not None:
-        np.random.seed(seed)
 
     # store results in list
     results = []
