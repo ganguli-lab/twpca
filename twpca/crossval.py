@@ -11,7 +11,7 @@ from .utils import stable_rank
 
 __all__ = ['cross_validate', 'hyperparam_search']
 
-def cross_validate(model, data, nfits, censor_prob=0.1, seed=None, **fit_kw):
+def cross_validate(model, data, nfits, censor_prob, seed=None, **fit_kw):
     """Runs cross-validation on TWPCA model.
     """
 
@@ -29,6 +29,11 @@ def cross_validate(model, data, nfits, censor_prob=0.1, seed=None, **fit_kw):
 
         # randomly subsample tensor
         testmask = np.random.rand(*data.shape) < censor_prob
+
+        # ensure at least one timepoint available for each neuron across trials
+        for idx in np.argwhere(np.sum(testmask, axis=0) == data.shape[0]):
+            k = np.random.choice(np.arange(data.shape[0]))
+            testmask[k, idx[0], idx[1]] = False
 
         # nan out the test indices
         traindata = data.copy().astype(np.float32)
@@ -57,7 +62,7 @@ def cross_validate(model, data, nfits, censor_prob=0.1, seed=None, **fit_kw):
     return results
 
 def hyperparam_search(data, n_components, warp_scales, time_scales,
-                      nfits=1, warp_reg=None, time_reg=None,
+                      nfits=1, warp_reg=None, time_reg=None, censor_prob=0.1,
                       fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
                       **model_kw):
     """Performs cross-validation over number of components, warp regularization scale, and
@@ -116,7 +121,7 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
     for nc, ws, ts in zip(tqdm(n_components), warp_scales, time_scales):
 
         model = TWPCA(nc, warp_regularizer=warp_reg(ws), time_regularizer=time_reg(ts), **model_kw)
-        _result = cross_validate(model, data, nfits, **fit_kw)
+        _result = cross_validate(model, data, nfits, censor_prob, **fit_kw)
 
         results['n_components'].append(nc)
         results['warp_scale'].append(ws)
