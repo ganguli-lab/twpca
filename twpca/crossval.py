@@ -11,7 +11,7 @@ from .utils import stable_rank
 
 __all__ = ['cross_validate', 'hyperparam_search']
 
-def cross_validate(model, data, nfits, censor_prob, **fit_kw):
+def cross_validate(model, data, nfits, drop_prob, **fit_kw):
     """Runs cross-validation on TWPCA model.
 
     Args
@@ -19,14 +19,18 @@ def cross_validate(model, data, nfits, censor_prob, **fit_kw):
     model : TWPCA model instance
     data (ndarray) : data tensor, trials x time x neurons
     nfits (int) : number of cross-validation runs
-    censor_prob (float) : probability of setting element of data to nan
+    drop_prob (float) : probability of setting element of data to nan
 
     Note: additional keyword args are passed to model.fit(...)
+
+    Returns
+    -------
+    results (list) : list of dicts containing model parameters,
+                     train/test error, and learning curves.
     """
 
     # check inputs
-    if censor_prob >= 1 or censor_prob < 0:
-        print(censor_prob)
+    if drop_prob >= 1 or drop_prob < 0:
         raise ValueError('Censor probability must be greater than zero and less than one.')
 
     # store results in list
@@ -35,7 +39,7 @@ def cross_validate(model, data, nfits, censor_prob, **fit_kw):
     for fit in range(nfits):
 
         # randomly subsample tensor
-        testmask = np.random.rand(*data.shape) < censor_prob
+        testmask = np.random.rand(*data.shape) < drop_prob
 
         # ensure at least one timepoint available for each neuron across trials
         for idx in np.argwhere(np.sum(testmask, axis=0) == data.shape[0]):
@@ -69,7 +73,7 @@ def cross_validate(model, data, nfits, censor_prob, **fit_kw):
     return results
 
 def hyperparam_search(data, n_components, warp_scales, time_scales,
-                      nfits=1, warp_reg=None, time_reg=None, censor_prob=0.1,
+                      nfits=1, drop_prob=0.1, warp_reg=None, time_reg=None,
                       fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
                       **model_kw):
     """Performs cross-validation over number of components, warp regularization scale, and
@@ -95,12 +99,13 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
         ```
 
     Keywork Args:
+        nfits: int, number of crossvalidation runs per model.
+        drop_prob: float, probability of censoring an element of the data array
         warp_reg: function, takes scalar and outputs a regularization term (in tensorflow) for
                     the warps. By default, `warp_reg = twpca.regularizers.curvature(s, power=1)`.
         time_reg: function, takes scalar and outputs a regularization term (in tensorflow) for
                     the time factors. By default,
                     `time_reg = twpca.regularizers.curvature(s, power=2, axis=0)`.
-        nfits: int, number of crossvalidation runs per model.
         fit_kw: dict, keyword arguments passed to model.fit
         **model_kw: additional keywords are passed to twpca.TWPCA(...)
 
@@ -128,7 +133,7 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
     for nc, ws, ts in zip(tqdm(n_components), warp_scales, time_scales):
 
         model = TWPCA(nc, warp_regularizer=warp_reg(ws), time_regularizer=time_reg(ts), **model_kw)
-        _result = cross_validate(model, data, nfits, censor_prob, **fit_kw)
+        _result = cross_validate(model, data, nfits, drop_prob, **fit_kw)
 
         results['n_components'].append(nc)
         results['warp_scale'].append(ws)
