@@ -115,7 +115,4 @@ def correlate_nanmean(x, y, **kwargs):
     x_ = np.nan_to_num(x)
     y_ = np.nan_to_num(y)
     xcorr = np.correlate(x_, y_, **kwargs)
-    xcorr_count = np.correlate((~np.isnan(x)).astype(float),
-                               (~np.isnan(y)).astype(float), mode='same')
-    xcorr_avg = xcorr / xcorr_count
-    return xcorr_avg
+    return xcorr
