@@ -99,17 +99,21 @@ class TWPCA(BaseEstimator, TransformerMixin):
         # Identify finite entries of data matrix
         np_mask = np.isfinite(X)
         self._num_datapoints = np.sum(np_mask)
-        self._mask = tf.constant(np_mask)
+        self._mask = tf.constant(np_mask, dtype=tf.float32)
 
-        # Compute last non-nan index for each trial
-        trial_masks = np.hstack((np.all(np_mask, axis=-1), np.zeros((n_trials, 1), dtype=bool)))
-        self.last_idx = np.argmin(trial_masks, axis=1)
+        # Compute last non-nan index for each trial.
+        # Note we find the first occurence of a non-nan in the reversed mask,
+        # and then map that index back to the original mask
+        rev_last_idx = np.argmax(np.all(np_mask, axis=-1)[:, ::-1], axis=1)
+        self.last_idx = n_timesteps - rev_last_idx
 
         # build the parameterized warping functions
         self._params['warp'], self._inv_warp, warp_vars = warp.generate_warps(n_trials,
             n_timesteps, self.shared_length, self.warptype, self.warpinit, self.origin_idx, data=np_X, last_idx=self.last_idx)
 
         # Initialize factor matrices
+        # TODO: compute low rank factors using initial warps, not raw data
+        # TODO: rewrite so this works on NaNs
         trial_init, time_init, neuron_init = utils.compute_lowrank_factors(np_X, self.n_components, self.fit_trial_factors, self.nonneg, self.last_idx)
 
         # create tensorflow variables for factor matrices
@@ -136,7 +140,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
 
         # total objective
         # only include terms that were not NaN in the original data matrix
-        self.recon_cost = tf.reduce_mean(tf.where(self._mask, (self.X_pred - self.X)**2, tf.zeros_like(self.X)))
+        self.recon_cost = tf.reduce_sum(self._mask * (self.X_pred - self.X)**2) / self._num_datapoints
         self.objective = self.recon_cost + self.regularization
         self.obj_history = []
 

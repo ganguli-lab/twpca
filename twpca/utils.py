@@ -70,11 +70,17 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, nonneg, last_
         last_idx: nd-array, list of ints holding last index before trial end
         scale: scale neuron and time factors by this amount, default 1.0
     """
-    # do matrix decomposition on trial-averaged data matrix
-    DecompModel = NMF if nonneg else TruncatedSVD
-    model = DecompModel(n_components=n_components)
-    time_fctr = model.fit_transform(np.nanmean(data, axis=0))
-    neuron_fctr = np.transpose(model.components_)
+
+    n_neurons = data.shape[-1]
+    if n_neurons == 1:
+        time_fctr = np.nanmean(data, axis=0)
+        neuron_fctr = np.atleast_2d([1.0])
+    else:
+        # do matrix decomposition on trial-averaged data matrix
+        DecompModel = NMF if nonneg else TruncatedSVD
+        model = DecompModel(n_components=n_components)
+        time_fctr = model.fit_transform(np.nanmean(data, axis=0))
+        neuron_fctr = np.transpose(model.components_)
 
     # rescale factors to same length
     s_time = np.linalg.norm(time_fctr, axis=0)
@@ -103,3 +109,10 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, nonneg, last_
             trial_fctr[k] = np.diag(np.linalg.pinv(time_fctr[:t]).dot(trial[:t]).dot(Bpinv.T))
         return trial_fctr, time_fctr, neuron_fctr
 
+
+def correlate_nanmean(x, y, **kwargs):
+    """Wrapper around np.correlate that handles NaNs."""
+    x_ = np.nan_to_num(x)
+    y_ = np.nan_to_num(y)
+    xcorr = np.correlate(x_, y_, **kwargs)
+    return xcorr

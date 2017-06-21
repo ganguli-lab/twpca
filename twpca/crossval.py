@@ -11,94 +11,56 @@ from .utils import stable_rank
 
 __all__ = ['cross_validate', 'hyperparam_search']
 
-def k_fold_iter(N, K):
-    """K-fold cross validation iterator
+def cross_validate(model, data, nfits, drop_prob, **fit_kw):
+    """Runs cross-validation on TWPCA model.
 
-    Args:
-        N: int, number of datapoitns
-        K: int, number of folds
-    """
-    idx = np.random.permutation(N)
-    for k in range(K):
-        train_idx = idx[idx % K != k]
-        test_idx = idx[idx % K == k]
-        yield train_idx, test_idx
+    Args
+    ---
+    model : TWPCA model instance
+    data (ndarray) : data tensor, trials x time x neurons
+    nfits (int) : number of cross-validation runs
+    drop_prob (float) : probability of setting element of data to nan
 
-def leave_k_out_iter(N, K):
-    """Leave K out cross validation iterator
+    Note: additional keyword args are passed to model.fit(...)
 
-    Args:
-        N: int, number of datapoitns
-        K: int, number to leave out in training set
-    """
-    idx = np.random.permutation(N)
-    i = 0
-    while i < N-1:
-        r = range(i, i + K)
-        i += K
-        train_idx = np.setdiff1d(idx, r)
-        test_idx = idx[r]
-        yield train_idx, test_idx    
-
-def cross_validate(model, data, method, K, max_fits=np.inf, seed=1234, **fit_kw):
-    """Runs specified cross-validation method.
-
-    Args:
-        model: TWPCA model instance
-        data: array-like (n_trials x n_timepoints x n_neurons)
-        method: string specifying method {'kfold', 'leaveout'}
-        K: int, crossvalidation parameter
-
-    Keyword Args:
-        max_fits: int, maximum number of partitions to train on
-        seed: int, passed to numpy.random.seed()
-        **fit_kw: additional keywords passed to model.fit
-
-    Returns:
-        results: dict, model parameters and metrics calculated for all sessions
+    Returns
+    -------
+    results (list) : list of dicts containing model parameters,
+                     train/test error, and learning curves.
     """
 
-    # set random state
-    np.random.seed(seed)
+    # check inputs
+    if drop_prob >= 1 or drop_prob < 0:
+        raise ValueError('Censor probability must be greater than zero and less than one.')
 
-    # set up cross validation partitions
-    if method == 'kfold':
-        partitions = k_fold_iter(data.shape[2], K)
-    elif method == 'leaveout':
-        partitions = leave_k_out_iter(data.shape[2], K)
-    else:
-        raise ValueError('Cross-validation method not recognized.')
-
-    nfits = 0
+    # store results in list
     results = []
-    for train, test in partitions:
-        # partition dataset
-        traindata = data[:, :, train]
-        testdata = data[:, :, test]
 
-        # fit model to training set
-        tf.reset_default_graph() # TODO (ben): better session management
+    for fit in range(nfits):
+
+        # randomly subsample tensor
+        testmask = np.random.rand(*data.shape) < drop_prob
+
+        # ensure at least one timepoint available for each neuron across trials
+        for idx in np.argwhere(np.sum(testmask, axis=0) == data.shape[0]):
+            k = np.random.choice(np.arange(data.shape[0]))
+            testmask[k, idx[0], idx[1]] = False
+
+        # nan out the test indices
+        traindata = data.copy().astype(np.float32)
+        traindata[testmask] = np.nan
+
+        # fit the model to the training set
+        tf.reset_default_graph()
         sess = tf.Session()
         model.fit(traindata, sess=sess, **fit_kw)
 
-        # assess dimensionality of warped vs unwarped testdata
-        warped_testdata = model.transform(testdata)
-        warped_rank, unwarped_rank = [], []
-        for n in range(testdata.shape[2]):
-            warped_rank.append(stable_rank(warped_testdata[:, :, n]))
-            unwarped_rank.append(stable_rank(testdata[:, :, n]))
+        # compute mean error on test set
+        resid = data - model.predict()
+        test_error = np.mean(resid[testmask]**2)
 
-        # evaluate test error
-        X_pred = model.predict(testdata)
-        test_error = np.mean((testdata - X_pred)**2)
-
-        # compile results
-        results.append(
-            {'params': model.params,
-             'warped_rank': np.array(warped_rank),
-             'unwarped_rank': np.array(unwarped_rank),
-             'test_idx': test,
-             'train_idx': train,
+        results.append({
+             'params': model.params,
              'train_error': model._sess.run(model.recon_cost),
              'test_error': test_error,
              'obj_history': model.obj_history
@@ -108,16 +70,10 @@ def cross_validate(model, data, method, K, max_fits=np.inf, seed=1234, **fit_kw)
         # clean-up tensorflow
         sess.close()
 
-        # terminate early if user is impatient
-        nfits += 1
-        if nfits >= max_fits:
-            break
-
     return results
 
 def hyperparam_search(data, n_components, warp_scales, time_scales,
-                      warp_reg=None, time_reg=None,
-                      crossval_method='kfold', K=5, max_fits=np.inf,
+                      nfits=1, drop_prob=0.1, warp_reg=None, time_reg=None,
                       fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
                       **model_kw):
     """Performs cross-validation over number of components, warp regularization scale, and
@@ -143,17 +99,13 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
         ```
 
     Keywork Args:
+        nfits: int, number of crossvalidation runs per model.
+        drop_prob: float, probability of censoring an element of the data array
         warp_reg: function, takes scalar and outputs a regularization term (in tensorflow) for
                     the warps. By default, `warp_reg = twpca.regularizers.curvature(s, power=1)`.
         time_reg: function, takes scalar and outputs a regularization term (in tensorflow) for
                     the time factors. By default,
                     `time_reg = twpca.regularizers.curvature(s, power=2, axis=0)`.
-        crossval_method: str, specifies cross validation. One of {'kfold' (default), 'leavout'}.
-        K: int, cross validation parameter. For example, K = 5 specifies 5-fold cross validation
-                    when crossval_method = 'kfold', and K = 1 specifies leave-1-out validation
-                    when crossval_method = 'leaveout'
-        max_fits: int, number of fits per model. For example max_fits = 1 means that only a single
-                  training and test set are evaluated (default: np.inf).
         fit_kw: dict, keyword arguments passed to model.fit
         **model_kw: additional keywords are passed to twpca.TWPCA(...)
 
@@ -175,14 +127,13 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
         'crossval_data': [],
         'mean_test': [],
         'mean_train': [],
-        'mean_dim_change': []
     }
 
     # run cross-validation for all specified hyperparameters
     for nc, ws, ts in zip(tqdm(n_components), warp_scales, time_scales):
 
         model = TWPCA(nc, warp_regularizer=warp_reg(ws), time_regularizer=time_reg(ts), **model_kw)
-        _result = cross_validate(model, data, crossval_method, K, max_fits=max_fits, **fit_kw)
+        _result = cross_validate(model, data, nfits, drop_prob, **fit_kw)
 
         results['n_components'].append(nc)
         results['warp_scale'].append(ws)
@@ -190,10 +141,8 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
         results['crossval_data'].append(_result)
         results['mean_test'].append(np.mean([r['test_error'] for r in _result]))
         results['mean_train'].append(np.mean([r['train_error'] for r in _result]))
-        results['mean_dim_change'].append(np.mean([r['warped_rank']-r['unwarped_rank'] for r in _result]))
 
     for k in results.keys():
         results[k] = np.array(results[k])
 
     return results
-
