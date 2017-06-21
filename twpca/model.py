@@ -188,7 +188,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
         Note: this uses the data that was used to initialize and fit the time parameters.
 
         Returns:
-            [n_trials, shared_length, n_neurons] Tensor of data warped into shared space
+            [n_trials, shared_length, n_neurons] numpy array of data warped into shared space
         """
         if X is None:
             X_tf = self.X
