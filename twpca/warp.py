@@ -42,7 +42,7 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
         if last_idx is None:
             raise ValueError("To use linear initialization, you must pass last_idx to generate_warps.")
         dtau_init = np.zeros((n_trials, n_timesteps))
-        init_scales = np.array(last_idx) / np.mean(last_idx)
+        init_scales = np.max(last_idx) / np.array(last_idx)
         init_shifts = np.zeros((n_trials,))
     elif init == 'shift':
         if data is None:
@@ -74,8 +74,8 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
 
     raw_tau = tau_scale[:, None] * tf.cumsum(d_tau, 1) + tau_shift[:, None]
     mean_intercept = tf.reduce_mean(raw_tau[:, 0])
-    mean_slope = tf.reduce_mean(raw_tau[:, -1] - raw_tau[:, 0]) / (n_timesteps - 1)
-    tau = (raw_tau - mean_intercept) / mean_slope
+    min_slope = tf.reduce_min(raw_tau[:, -1] - raw_tau[:, 0]) / (n_timesteps - 1)
+    tau = (raw_tau - mean_intercept) / min_slope
 
     # Force warps to be identical at origin idx
     if origin_idx is not None:
