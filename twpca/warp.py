@@ -5,11 +5,9 @@ Functions for time warping.
 import numpy as np
 from scipy.interpolate import interp1d
 import tensorflow as tf
+from . import utils
 
-from .utils import correlate_nanmean
-
-
-def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_idx=None, data=None, last_idx=None):
+def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, center_taus=False, origin_idx=None, data=None, last_idx=None):
     """Generate parameters and warping function.
 
     Args:
@@ -18,6 +16,7 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
         shared_length: number of timesteps in shared space
         warptype: type of warping, one of ('nonlinear', 'affine', 'shift', 'scale')
         init: initialization type ('identity', 'randn', 'linear', or 'shfit')
+        center_taus: If True, constrain slope and intercept of warping functions to be one and zero
         origin_idx: fix warps to be identity at this location
         data : optional, ndarray, shape = [n_trials x trial_length x n_neurons]
             only needed when using 'shift' initialization scheme
@@ -56,7 +55,7 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
         for tidx, trial in enumerate(data):
             xcorr = np.zeros(n_timesteps)
             for n in range(num_neurons):
-                xcorr += correlate_nanmean(psth[:, n], trial[:last_idx[tidx], n], mode='same')
+                xcorr += utils.correlate_nanmean(psth[:, n], trial[:last_idx[tidx], n], mode='same')
             init_shifts.append(np.argmax(xcorr) - (last_idx[tidx] / 2))
         init_shifts = np.array(init_shifts)
         init_scales = np.ones((n_trials,))
@@ -72,10 +71,13 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
     tau_shift = tf.Variable(init_shifts.astype(np.float32), name="tau_shift")
     tau_scale = tf.Variable(init_scales.astype(np.float32), name="tau_scale")
 
-    raw_tau = tau_scale[:, None] * tf.cumsum(d_tau, 1) + tau_shift[:, None]
-    mean_intercept = tf.reduce_mean(raw_tau[:, 0])
-    min_slope = tf.reduce_min(raw_tau[:, -1] - raw_tau[:, 0]) / (n_timesteps - 1)
-    tau = (raw_tau - mean_intercept) / min_slope
+    tau = tau_scale[:, None] * tf.cumsum(d_tau, 1) + tau_shift[:, None]
+
+    # Force mean intercept to be zero and min slope to be one
+    if center_taus:
+        mean_intercept = tf.reduce_mean(raw_tau[:, 0])
+        min_slope = tf.reduce_min(raw_tau[:, -1] - raw_tau[:, 0]) / (n_timesteps - 1)
+        tau = (raw_tau - mean_intercept) / min_slope
 
     # Force warps to be identical at origin idx
     if origin_idx is not None:
@@ -100,7 +102,6 @@ def generate_warps(n_trials, n_timesteps, shared_length, warptype, init, origin_
         "Invalid warptype={}. Must be one of {}".format(warptype, valid_warptypes)
 
     return tau, tau_inv, params
-
 
 def warp(data, tau):
     """Applies a nonlinear temporal warping given by the indices (tau)
@@ -150,6 +151,6 @@ def _invert_warp_indices(indices, n_timesteps, shared_length):
     xs_eval = np.arange(shared_length)
     new_warps = []
     for t, trial_warp in enumerate(indices):
-        f = interp1d(trial_warp, xs, bounds_error=False, fill_value="extrapolate")
+        f = interp1d(trial_warp, xs, bounds_error=False, fill_value=np.nan)
         new_warps.append(f(xs_eval))
     return np.array(new_warps).astype(np.float32)
