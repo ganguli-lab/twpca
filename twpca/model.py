@@ -1,4 +1,5 @@
 import numpy as np
+from functools import wraps
 from sklearn.decomposition import NMF, TruncatedSVD
 from tqdm import trange
 
@@ -7,9 +8,56 @@ from . import warp, utils
 from .regularizers import l2, curvature
 
 
-# TODO - niru make a super class that handles graph and session management
+def tf_graph_wrapper(func):
+    """Wraps a class method with a tf.Graph context manager"""
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        with self._graph.as_default():
+            return func(self, *args, **kwargs)
+    return wrapper
 
-class TWPCA(object):
+
+def tf_init(func):
+    """Wraps an __init__ function with its own session and graph"""
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        self._graph = tf.Graph()
+        self._sess = tf.Session(graph=self._graph)
+        return tf_graph_wrapper(func)(self, *args, **kwargs)
+    return wrapper
+
+
+class TFSandbox:
+    """Sandboxes subclass to live in a separate graph/session"""
+    def __init_subclass__(cls):
+        for name, value in cls.__dict__.items():
+
+            # patch __init__
+            if name == '__init__':
+                setattr(cls, name, tf_init(value))
+
+            # all class methods get wrapped
+            elif callable(value):
+                setattr(cls, name, tf_graph_wrapper(value))
+
+            # _sess and _graph are reserved keywords
+            elif name in ('_sess', '_graph'):
+                raise ValueError('subclass cannot use reserved keywords _sess and _graph.')
+
+        # patch the getattribute method
+        setattr(cls, '__getattr__',
+                lambda self, x: self.run(x) if isinstance(x, tf.Variable) else x)
+
+    @tf_graph_wrapper
+    def init_vars(self):
+        return self.run(tf.global_variables_initializer())
+
+    @tf_graph_wrapper
+    def run(self, ops):
+        return self._sess.run(ops)
+
+
+class TWPCA(TFSandbox):
 
     def __init__(self, data, n_components,
                  shared_length=None,
