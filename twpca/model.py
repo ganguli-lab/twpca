@@ -1,5 +1,4 @@
 import numpy as np
-from sklearn.base import BaseEstimator, TransformerMixin # TODO: is this still valid?
 from sklearn.decomposition import NMF, TruncatedSVD
 from tqdm import trange
 
@@ -8,7 +7,9 @@ from . import warp, utils
 from .regularizers import l2, curvature
 
 
-class TWPCA(BaseEstimator, TransformerMixin):
+# TODO - niru make a super class that handles graph and session management
+
+class TWPCA(object):
 
     def __init__(self, data, n_components,
                  shared_length=None,
@@ -21,7 +22,10 @@ class TWPCA(BaseEstimator, TransformerMixin):
                  warptype='nonlinear',
                  warpinit='linear',
                  warp_regularizer=curvature(),
-                 origin_idx=None):
+                 origin_idx=None,
+                 warps=None,
+                 normalize_warps=True,
+                 optimizer=tf.train.AdamOptimizer):
         """Time-warped Principal Components Analysis
 
         Args:
@@ -37,16 +41,21 @@ class TWPCA(BaseEstimator, TransformerMixin):
                 to the neuron and time factors (default: False)
             warptype: type of warps to allow ('nonlinear', 'affine', 'shift', or 'scale'). The
                 default is 'nonlinear' which allows for full nonlinear warping
-            warpinit: either 'identity', 'linear', 'shift', 'randn'
+            warpinit: either 'identity', 'linear', 'shift'
             warp_regularizer (optional): regularization on the warp function (default: curvature())
             origin_idx (optional): if not None, all warping functions are pinned (aligned) at this
                 index. (default: None)
         """
 
+        # set up tensorflow framework
+        self._graph = tf.Graph()
+        self._sess = tf.Session(graph=self._graph)
+
         # store the data in numpy and tensorflow
         self.data = np.atleast_3d(data.astype(np.float32))
         # set NaNs to zero so tensorflow doesn't choke
-        self._data = tf.constant(np.nan_to_num(self.data))
+        with self._graph.as_default():
+            self._data = tf.constant(np.nan_to_num(self.data))
 
         # data dimensions
         self.n_trials, self.n_timepoints, self.n_neurons = self.data.shape
@@ -55,7 +64,8 @@ class TWPCA(BaseEstimator, TransformerMixin):
         # mask out missing data
         self.mask = np.isfinite(self.data).astype(np.float32)
         self.num_datapoints = np.sum(self.mask)
-        self._mask = tf.constant(self.mask)
+        with self._graph.as_default():
+            self._mask = tf.constant(self.mask)
 
         # Compute last non-nan index for each trial.
         # Note we find the first occurence of a non-nan in the reversed mask,
@@ -85,51 +95,97 @@ class TWPCA(BaseEstimator, TransformerMixin):
             'warp': warp_regularizer,
         }
 
-        # store tensorflow variables, parameters and session
-        self._train_vars = {} # tensorflow variables that are optimized
-        self._params = {}     # model parameters (transformations applied to train_vars)
+        # create all tensorflow variables
+        with self._graph.as_default():
+            self._train_vars = {} # tensorflow variables that are optimized
+            # factor matrix parameters
+            self._train_vars['time'] = tf.get_variable('time_factors', shape=(self.n_timepoints, self.n_components))
+            self._train_vars['neuron'] = tf.get_variable('neuron_factors', shape=(self.n_neurons, self.n_components))
+            if self.fit_trial_factors:
+                self._train_vars['trial'] = tf.get_variable('trial_factors', shape=(self.n_neurons, self.n_components))
+            # warp parameters
+            self.tau = tf.get_variable('tau', shape=(self.n_trials, self.shared_length), dtype=tf.float32)
+            self.tau_shift = tf.get_variable('tau_shift', shape=(self.n_trials,), dtype=tf.float32)
+            self.tau_scale = tf.get_variable('tau_scale', shape=(self.n_trials,), dtype=tf.float32)
+            # learning rate for optimizers
+            self._lr = tf.placeholder(tf.float32, shape=[])
 
-        # sets up tensorflow variables for warps
-        self._initialize_warps()
+            # sets up tensorflow variables for warps
+            _pos_tau = tf.nn.softplus(self.tau) / tf.log(2.0)
+            _warp = self.tau_scale[:, None] * tf.cumsum(_pos_tau, 1) + self.tau_shift[:, None]
 
-        # create tensorflow variables for factor matrices
-        self._train_vars['time'] = tf.get_variable('time_factors', shape=(self.n_timepoints, self.n_components))
-        self._train_vars['neuron'] = tf.get_variable('neuron_factors', shape=(self.n_neurons, self.n_components))
-        if self.fit_trial_factors:
-            self._train_vars['trial'] = tf.get_variable('trial_factors', shape=(self.n_neurons, self.n_components))
+            # Force mean intercept to be zero and min slope to be one
+            if center_taus:
+                mean_intercept = tf.reduce_mean(_warp[:, 0])
+                min_slope = tf.reduce_min(_warp[:, -1] - _warp[:, 0]) / (self.n_timepoints - 1)
+                _warp = (_warp - mean_intercept) / min_slope
 
-        # if nonnegative model, transform factor matrices by softplus rectifier
-        f = tf.nn.softplus if self.nonneg else tf.identity
-        self._params['time'] = f(self._train_vars['time'])
-        self._params['neuron'] = f(self._train_vars['neuron'])
-        if self.fit_trial_factors:
-            self._params['trial'] = f(self._train_vars['trial'])
+            # Force warps to be identical at origin idx
+            if origin_idx is not None:
+                pin = _warp - _warp[:, origin_idx][:, None] + origin_idx
+                _warp = tf.clip_by_value(pin, 0, self.n_timepoints - 1)
 
-        # compute warped time factors for each trial
-        _tiled_fctr = tf.tile(tf.expand_dims(self._params['time'], [0]), [self.n_trials, 1, 1])
-        self._warped_time_factors = warp.warp(_tiled_fctr, self._params['warp'])
+            # store the warping and inverse warping function
+            self._params = {'warp': _warp}
+            _args = [_warp, self.n_timepoints, self.shared_length]
+            self._inv_warp = tf.py_func(warp._invert_warp_indices, _args, tf.float32)
 
-        # reconstruct full tensor 
-        if self.fit_trial_factors:
-            # trial i, time j, factor k, neuron n
-            self.pred = tf.einsum('ik,ijk,nk->ijn', self._params['trial'], self._warped_time_factors, self._params['neuron'])
-        else:
-            # trial i, time j, factor k, neuron n
-            self.pred = tf.einsum('ijk,nk->ijn', self._warped_time_factors, self._params['neuron'])
+            # declare which parameters are trainable
+            # Always include shift/scale with nonlinear transformation
+            if warptype == 'nonlinear':
+                self._train_vars['warp'] = [self.tau, self.tau_shift, self.tau_scale]
+            elif warptype == 'affine':
+                self._train_vars['warp'] = [self.tau_shift, self.tau_scale]
+            elif warptype == 'shift':
+                self._train_vars['warp'] = [self.tau_shift]
+            elif warptype == 'scale':
+                self._train_vars['warp'] = [self.tau_scale]
+            else:
+                valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale')
+                raise ValueError("Invalid warptype={}. Must be one of {}".format(warptype, valid_warptypes))
 
-        # objective function (note that nan values are zeroed out by self._mask)
-        self._recon_cost = tf.reduce_sum(self._mask * (self.pred - self._data)**2) / self.num_datapoints
-        self._objective = self._recon_cost + self._regularization
+            # if nonnegative model, transform factor matrices by softplus rectifier
+            f = tf.nn.softplus if self.nonneg else tf.identity
+            self._params['time'] = f(self._train_vars['time'])
+            self._params['neuron'] = f(self._train_vars['neuron'])
+            if self.fit_trial_factors:
+                self._params['trial'] = f(self._train_vars['trial'])
 
-        # TODO: better session management
-        self._sess = tf.Session()
-        self.assign_warps()
-        self.assign_factors()
+            # compute warped time factors for each trial
+            _tiled_fctr = tf.tile(tf.expand_dims(self._params['time'], [0]), [self.n_trials, 1, 1])
+            self._warped_time_factors = warp.warp(_tiled_fctr, self._params['warp'])
 
-    def assign_factors(self, transform_data=True):
+            # reconstruct full tensor
+            if self.fit_trial_factors:
+                # trial i, time j, factor k, neuron n
+                self.pred = tf.einsum('ik,ijk,nk->ijn', self._params['trial'], self._warped_time_factors, self._params['neuron'])
+            else:
+                # trial i, time j, factor k, neuron n
+                self.pred = tf.einsum('ijk,nk->ijn', self._warped_time_factors, self._params['neuron'])
+
+            # objective function (note that nan values are zeroed out by self._mask)
+            self._recon_cost = tf.reduce_sum(self._mask * (self.pred - self._data)**2) / self.num_datapoints
+            self._objective = self._recon_cost + self._regularization
+
+            # initialize values for tensorflow variables
+            self.assign_train_op(optimizer)
+            self.assign_warps(warps, normalize_warps)
+            self.assign_factors()
+
+    def assign_train_op(self, optimizer):
+        """Assign the training operation
+        """
+        self._opt = optimizer(self._lr)
+        var_list = [v for k, v in self._train_vars.items() if k != 'warp'] + list(self._train_vars['warp'])
+        self._train_op = self._opt.minimize(self._objective, var_list=var_list)
+        utils.initialize_new_vars(self._sess)
+
+    def assign_factors(self):
+        """Assign the factor matrices by matrix/tensor decomposition on warped data
+        """
 
         # apply inverse warps to data to get a better estimate of initial factors
-        data = self.transform(self.data) if transform_data else self.data
+        data = self.transform(self.data)
         data = np.nan_to_num(data)
 
         # do matrix decomposition for initial factor matrices
@@ -172,7 +228,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
         # done initializing factors
         return self._sess.run(assignment_ops)
 
-    def assign_warps(self, warps=None, normalize_warps=True):
+    def assign_warps(self, warps, normalize_warps=True):
         """Initialize the warping functions
 
         Args:
@@ -187,17 +243,20 @@ class TWPCA(BaseEstimator, TransformerMixin):
             # warps proved by user
             if normalize_warps:
                 warps *= self.n_timepoints / np.max(warps)
-
             shift = warps[:, 0] - 1
             scale = np.ones(self.n_trials)
             dtau = np.hstack((np.ones((self.n_trials, 1)), np.diff(warps, axis=1)))
             tau = utils.inverse_softplus(np.maximum(0, dtau) * np.log(2.0))
 
+        elif self.warpinit == 'identity':
+            scale = np.ones(self.n_trials)
+            shift = np.zeros(self.n_trials)
+            tau = np.zeros((self.n_trials, self.n_timepoints))
+
         elif self.warpinit == 'linear':
             # warps linearly stretched to common trial length
-            # (note: this initializes to identity if the trial lengths are the same)
             scale = np.max(self.last_idx) / np.array(self.last_idx)
-            shift = np.zeros((self.n_trials,))
+            shift = np.zeros(self.n_trials)
             tau = np.zeros((self.n_trials, self.n_timepoints))
 
         elif self.warpinit == 'shift':
@@ -210,20 +269,20 @@ class TWPCA(BaseEstimator, TransformerMixin):
                     xcorr += utils.correlate_nanmean(psth[:, n], trial[:last_idx[tidx], n], mode='same')
                 shift.append(np.argmax(xcorr) - (last_idx[tidx] / 2))
             shift = np.array(shift)
-            scale = np.ones((self.n_trials,))
+            scale = np.ones(self.n_trials)
             tau = np.zeros((self.n_trials, self.n_timepoints))
 
         else:
-            raise ValueError("Initialization method not recongnized: %s" % init)
+            _args = (self.warpinit, ('identity', 'linear', 'shift'))
+            raise ValueError('Invalid warpinit={}. Must be one of {}'.format(*_args))
 
         # assign the warps and return
         ops = []
-        _var, var = (self.tau_shift, self.tau_scale, self.tau), (shift, scale, tau)
-        for _v, v in zip(_var, var):
+        for _v, v in zip((self.tau_shift, self.tau_scale, self.tau), (shift, scale, tau)):
             ops += [tf.assign(_v, tf.constant(v, dtype=tf.float32))]
         return self._sess.run(ops)
 
-    def fit(self, optimizer=tf.train.AdamOptimizer, niter=1000, lr=1e-3, sess=None, progressbar=True):
+    def fit(self, optimizer=None, niter=1000, lr=1e-3, sess=None, progressbar=True):
         """Fit the twPCA model
 
         Args:
@@ -236,39 +295,27 @@ class TWPCA(BaseEstimator, TransformerMixin):
 
         # convert niter and lr to iterables if given as scalars
         if (not np.iterable(niter)) and (not np.iterable(lr)):
-            niter = (niter,)
-            lr = (lr,)
-
-        # niter and lr must have the same number of elements
+            niter, lr = (niter,), (lr,)
         elif np.iterable(niter) and np.iterable(lr):
-            niter = list(niter)
-            lr = list(lr)
             if len(niter) != len(lr):
                 raise ValueError("niter and lr must have the same length.")
         else:
             raise ValueError("niter and lr must either be numbers or iterables of the same length.")
 
-        # TODO: better session management
-        if sess is not None:
-            self._sess = sess
+        # reset optimizer if set by user
+        if optimizer is not None:
+            self.assign_train_op(optimizer)
 
         # reset objective history
         self.obj_history = []
 
-        # create train_op
-        self._lr = tf.placeholder(tf.float32, name="learning_rate")
-        self._opt = optimizer(self._lr)
-        var_list = [v for k, v in self._train_vars.items() if k != 'warp'] + list(self._train_vars['warp'])
-        self._train_op = self._opt.minimize(self._objective, var_list=var_list)
-
         # run the optimizer
-        utils.initialize_new_vars(self._sess)
         iterator = trange if progressbar else range
         _ops = [self._objective, self._train_op]
         for i, l in zip(niter, lr):
             self.obj_history += [self._sess.run(_ops, feed_dict={self._lr: l})[0] for tt in iterator(i)]
 
-        return self
+        return self.obj_history
 
     @property
     def params(self):
@@ -344,49 +391,6 @@ class TWPCA(BaseEstimator, TransformerMixin):
             pred = pred.T.reshape(*X.shape) # (trials x time x neuron)
 
             return pred
-
-    def _initialize_warps(self):
-
-        self.tau = tf.get_variable('tau_params', shape=(self.n_trials, self.shared_length), dtype=tf.float32)
-        self.tau_shift = tf.get_variable('tau_shift', shape=(self.n_trials,), dtype=tf.float32)
-        self.tau_scale = tf.get_variable('tau_scale', shape=(self.n_trials,), dtype=tf.float32)
-
-        _pos_tau = tf.nn.softplus(self.tau) / tf.log(2.0)
-        _warp = self.tau_scale[:, None] * tf.cumsum(_pos_tau, 1) + self.tau_shift[:, None]
-
-        # Force mean intercept to be zero and min slope to be one
-        if self.center_taus:
-            mean_intercept = tf.reduce_mean(_warp[:, 0])
-            min_slope = tf.reduce_min(_warp[:, -1] - _warp[:, 0]) / (self.n_timepoints - 1)
-            _warp = (_warp - mean_intercept) / min_slope
-
-        # Force warps to be identical at origin idx
-        if self.origin_idx is not None:
-            pin = _warp - _warp[:, origin_idx][:, None] + origin_idx
-            _warp = tf.clip_by_value(pin, 0, self.n_timepoints - 1)
-
-        # store the warping function
-        self._params['warp'] = _warp
-
-        # store the inverse warping function
-        _args = [_warp, self.n_timepoints, self.shared_length]
-        self._inv_warp = tf.py_func(warp._invert_warp_indices, _args, tf.float32)
-
-        # declare which parameters are trainable
-        # Always include shift/scale with nonlinear transformation
-        if self.warptype == 'nonlinear':
-            self._train_vars['warp'] = [self.tau, self.tau_shift, self.tau_scale]
-        elif self.warptype == 'affine':
-            self._train_vars['warp'] = [self.tau_shift, self.tau_scale]
-        elif self.warptype == 'shift':
-            self._train_vars['warp'] = [self.tau_shift]
-        elif self.warptype == 'scale':
-            self._train_vars['warp'] = [self.tau_scale]
-        else:
-            valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale')
-            raise ValueError("Invalid warptype={}. Must be one of {}".format(warptype, valid_warptypes))
-
-        return None
 
     @property
     def objective(self):
