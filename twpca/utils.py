@@ -4,8 +4,9 @@ TWPCA utilities
 import numpy as np
 import tensorflow as tf
 
-__all__ = ['get_uninitialized_vars', 'initialize_new_vars', 'stable_rank']
-
+def printvars():
+    for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
+        print(v.name, v.get_shape().as_list())
 
 def get_uninitialized_vars(sess, var_list=None):
     """Gets a uninitialized variables in the current session
@@ -62,7 +63,6 @@ def inverse_softplus(y):
     """Inverse of the softplus function
     """
     return np.log(np.exp(y + 1e-5) - 1)
-
 
 def correlate_nanmean(x, y, **kwargs):
     """Wrapper around np.correlate that handles NaNs."""
