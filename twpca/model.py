@@ -59,7 +59,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
         self._params = {}     # model parameters (if nonneg=True, softplus transform applied to raw_params)
         self._sess = None
 
-    def fit(self, X, optimizer=tf.train.AdamOptimizer, niter=1000, lr=1e-3, sess=None, progressbar=True):
+    def fit(self, X, optimizer=tf.train.AdamOptimizer, warps=None, niter=1000, lr=1e-3, sess=None, progressbar=True):
         """Fit the twPCA model
 
         Args:
@@ -70,6 +70,11 @@ class TWPCA(BaseEstimator, TransformerMixin):
                 then a new session is created. (default: None)
             progressbar (optional): whether to print a progressbar (default: True)
         """
+
+        # create a tensorflow session if necessary
+        if sess is None:
+            sess = tf.Session()
+        self._sess = sess
 
         # set the shared length to the number of timesteps if not already defined
         if self.shared_length is None:
@@ -96,6 +101,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
         self.X = tf.constant(np.nan_to_num(np_X))
         # pull out dimensions
         n_trials, n_timesteps, n_neurons = np_X.shape
+        self.n_trials, self.n_timesteps, self.n_neurons = n_trials, n_timesteps, n_neurons
         # Identify finite entries of data matrix
         np_mask = np.isfinite(X)
         self._num_datapoints = np.sum(np_mask)
@@ -111,10 +117,13 @@ class TWPCA(BaseEstimator, TransformerMixin):
         self._params['warp'], self._inv_warp, warp_vars = warp.generate_warps(n_trials,
             n_timesteps, self.shared_length, self.warptype, self.warpinit, self.origin_idx, data=np_X, last_idx=self.last_idx)
 
+        # assign initial warping functions if given by user
+        utils.initialize_new_vars(self._sess)
+        if warps is not None:
+            self._assign_warps(warps)
+
         # Initialize factor matrices
-        # TODO: compute low rank factors using initial warps, not raw data
-        # TODO: rewrite so this works on NaNs
-        trial_init, time_init, neuron_init = utils.compute_lowrank_factors(np_X, self.n_components, self.fit_trial_factors, self.nonneg, self.last_idx)
+        trial_init, time_init, neuron_init = utils.compute_lowrank_factors(self.transform(np_X), self.n_components, self.fit_trial_factors, self.nonneg, self.last_idx)
 
         # create tensorflow variables for factor matrices
         self._raw_params['time'] = tf.Variable(time_init, name="time_factors")
@@ -143,11 +152,6 @@ class TWPCA(BaseEstimator, TransformerMixin):
         self.recon_cost = tf.reduce_sum(self._mask * (self.X_pred - self.X)**2) / self._num_datapoints
         self.objective = self.recon_cost + self.regularization
         self.obj_history = []
-
-        # create a tensorflow session if necessary
-        if sess is None:
-            sess = tf.Session()
-        self._sess = sess
 
         # create train_op
         self._lr = tf.placeholder(tf.float32, name="learning_rate")
@@ -229,7 +233,7 @@ class TWPCA(BaseEstimator, TransformerMixin):
             # grab the warped temporal factors
             if self.fit_trial_factors:
                 warped_factors = self._sess.run(self._warped_time_factors)
-                trial_factors = self._sess.run(self.self._params['trial'])
+                trial_factors = self._sess.run(self._params['trial'])
                 warped_factors *= trial_factors[:, None, :] # broadcast multiply across trials
             else:
                 warped_factors = self._sess.run(self._warped_time_factors)
@@ -251,6 +255,26 @@ class TWPCA(BaseEstimator, TransformerMixin):
             X_pred = X_pred.T.reshape(*X.shape) # (trials x time x neuron)
 
         return X_pred
+
+    def _assign_warps(self, warps, normalize_warps=True):
+
+        assert warps.shape[0] == self.n_trials
+        assert warps.shape[1] == self.n_timesteps
+
+        if normalize_warps:
+            warps *= self.n_timesteps / np.max(warps)
+
+        tau_shift = [v for v in tf.global_variables() if v.name == "tau_shift:0"][0]
+        tau_scale = [v for v in tf.global_variables() if v.name == "tau_scale:0"][0]
+        tau_params = [v for v in tf.global_variables() if v.name == "tau_params:0"][0]
+
+        set_shift = tf.assign(tau_shift, tf.constant(warps[:, 0] - 1, dtype=tf.float32))
+        set_scale = tf.assign(tau_scale, tf.constant(np.ones(self.n_trials), dtype=tf.float32))
+        dtau = np.hstack((np.ones((self.n_trials, 1)), np.diff(warps, axis=1)))
+        inv_dtau = utils.inverse_softplus(np.maximum(0, dtau) * np.log(2.0))
+        set_taus = tf.assign(tau_params, tf.constant(inv_dtau, dtype=tf.float32))
+
+        return self._sess.run([set_shift, set_scale, set_taus])
 
     @property
     def regularization(self):
