@@ -59,6 +59,10 @@ def stable_rank(matrix):
     svals_squared = np.linalg.svd(matrix, full_matrices=False, compute_uv=False) ** 2
     return svals_squared.sum() / svals_squared.max()
 
+def inverse_softplus(y):
+    """Inverse of the softplus function
+    """
+    return np.log(np.exp(y + 1e-5) - 1)
 
 def compute_lowrank_factors(data, n_components, fit_trial_factors, nonneg, last_idx, scale=1.0):
     """Gets initial values for factor matrices by SVD on trial-averaged data
@@ -70,6 +74,9 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, nonneg, last_
         last_idx: nd-array, list of ints holding last index before trial end
         scale: scale neuron and time factors by this amount, default 1.0
     """
+
+    # replace nans (should only occur on extrapolated warps)
+    data = np.nan_to_num(data)
 
     n_neurons = data.shape[-1]
     if n_neurons == 1:
@@ -92,9 +99,8 @@ def compute_lowrank_factors(data, n_components, fit_trial_factors, nonneg, last_
 
     # apply inverse softplus
     if nonneg:
-        inv_softplus = lambda y: np.log(np.exp(y + 1e-5) - 1)
-        time_fctr = inv_softplus(time_fctr)
-        neuron_fctr = inv_softplus(neuron_fctr)
+        time_fctr = inverse_softplus(time_fctr)
+        neuron_fctr = inverse_softplus(neuron_fctr)
 
     if not fit_trial_factors:
         return None, time_fctr, neuron_fctr
