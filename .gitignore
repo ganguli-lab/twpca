@@ -23,6 +23,7 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
+.mypy_cache/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -91,4 +92,3 @@ ENV/
 examples/crossval-demo/*.pickle
 examples/crossval-demo/nohup.out
 examples/crossval-demo/*.png
-

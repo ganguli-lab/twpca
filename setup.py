@@ -11,8 +11,6 @@ setup(
         'tensorflow>=1.0.0',
         'scipy',
         'scikit-learn',
-        'matplotlib',
-        'seaborn',
         'tqdm',
     ],
     extras_require={
