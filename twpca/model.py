@@ -331,7 +331,7 @@ class TWPCA(object):
         for i, l in zip(niter, lr):
             self.obj_history += [self._sess.run(_ops, feed_dict={self._lr: l})[0] for tt in iterator(i)]
 
-        return self.obj_history
+        return self
 
     @property
     def params(self):
