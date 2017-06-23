@@ -19,8 +19,8 @@ def cross_validate(data, nfits, drop_prob, model_kw, fit_kw):
     data (ndarray) : data tensor, trials x time x neurons
     nfits (int) : number of cross-validation runs
     drop_prob (float) : probability of setting element of data to nan
-
-    Note: additional keyword args are passed to model.fit(...)
+    model_kw (dict) : arguments passed to create TWPCA
+    fit_kw (dict) : arguments passed to TWPCA.fit(...)
 
     Returns
     -------
@@ -74,7 +74,7 @@ def cross_validate(data, nfits, drop_prob, model_kw, fit_kw):
 
 def hyperparam_search(data, n_components, warp_scales, time_scales,
                       nfits=1, drop_prob=0.1, warp_reg=None, time_reg=None,
-                      fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
+                      fit_kw=dict(lr=1e-2, niter=500, progressbar=False),
                       model_kw=dict()):
     """Performs cross-validation over number of components, warp regularization scale, and
     temporal regularization scale.
@@ -107,7 +107,7 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
                     the time factors. By default,
                     `time_reg = twpca.regularizers.curvature(s, power=2, axis=0)`.
         fit_kw: dict, keyword arguments passed to model.fit
-        **model_kw: additional keywords are passed to twpca.TWPCA(...)
+        model_kw: dict, keyword arguments / model options passed to twpca.TWPCA(...)
 
     Returns:
         results: dict, contains parameters and statistics of fitted models

@@ -5,6 +5,8 @@ import numpy as np
 import tensorflow as tf
 
 def printvars():
+    """Prints all tensorflow variables
+    """
     for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
         print(v.name, v.get_shape().as_list())
 
@@ -60,8 +62,7 @@ def stable_rank(matrix):
     return svals_squared.sum() / svals_squared.max()
 
 def inverse_softplus(y):
-    """Inverse of the softplus function
-    """
+    """Inverse of the softplus function."""
     return np.log(np.exp(y + 1e-5) - 1)
 
 def correlate_nanmean(x, y, **kwargs):

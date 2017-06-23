@@ -23,27 +23,32 @@ class TWPCA(object):
                  warp_regularizer=curvature(),
                  origin_idx=None,
                  warps=None,
-                 normalize_warps=True,
                  optimizer=tf.train.AdamOptimizer):
         """Time-warped Principal Components Analysis
 
         Args:
             data: ndarray containing (trials x timepoints x neurons) data
             n_components: number of components to use
-            shared_length (optional): length of each trial in the warped/shared space. If None,
-                the length of the dataset is used (default: None)
-            trial_regularizer (optional): regularization on the trial factors (default: l2(1e-6))
-            time_regularizer (optional): regularization on the time factors (default: l2(1e-6))
-            neuron_regularizer (optional): regularization on the neuron factors (default: l2(1e-6))
-            nonneg (optional): whether latent factors are constrained to be nonnegative (default: False)
-            fit_trial_factors (optional): whether or not to fit weights on each trial, in addition
-                to the neuron and time factors (default: False)
-            warptype: type of warps to allow ('nonlinear', 'affine', 'shift', or 'scale'). The
-                default is 'nonlinear' which allows for full nonlinear warping
-            warpinit: either 'identity', 'linear', 'shift'
-            warp_regularizer (optional): regularization on the warp function (default: curvature())
-            origin_idx (optional): if not None, all warping functions are pinned (aligned) at this
-                index. (default: None)
+
+        Keyword Args (optional):
+            sess : tensorflow Session (a new session is created if not provided)
+            shared_length : int, length of each trial in the warped/shared space. If not
+                            specified, defaults to n_timepoints in `data`.
+            trial_regularizer : regularization on the trial factors (default: l2(1e-6))
+            time_regularizer : regularization on the time factors (default: l2(1e-6))
+            neuron_regularizer : regularization on the neuron factors (default: l2(1e-6))
+            nonneg : bool, if True the factors are constrained to be nonnegative (default: False)
+            fit_trial_factors : If True, fit weights on each trial, in addition to the neuron
+                                and time factors (default: False)
+            warptype : type of warps to allow ('fixed', 'nonlinear', 'affine', 'shift', or 'scale'). The
+                default is 'nonlinear' which allows for full nonlinear warping.
+            warpinit : type of warp initialization ('identity', 'linear', 'shift')
+            warp_regularizer : regularization on the warp function (default: curvature())
+            origin_idx : int, if specified all warping functions are pinned to start at this index.
+            warps : numpy array (shared_length x n_trials), if provided, the warps are initialized to
+                    these functions.
+            optimizer : tf.train.Optimizer class, that creates the initial training operation
+                        (default: AdamOptimizer)
         """
         self._sess = tf.Session() if sess is None else sess
 
@@ -131,18 +136,16 @@ class TWPCA(object):
         # Always include shift/scale with nonlinear transformation
         if warptype == 'nonlinear':
             self._train_vars['warp'] = [self.tau, self.tau_shift, self.tau_scale]
-
         elif warptype == 'affine':
             self._train_vars['warp'] = [self.tau_shift, self.tau_scale]
-
         elif warptype == 'shift':
             self._train_vars['warp'] = [self.tau_shift]
-
         elif warptype == 'scale':
             self._train_vars['warp'] = [self.tau_scale]
-
+        elif warpetype == 'fixed':
+            self._train_vars['warp'] = []
         else:
-            valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale')
+            valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale', 'fixed')
             raise ValueError("Invalid warptype={}. Must be one of {}".format(warptype, valid_warptypes))
 
         # if nonnegative model, transform factor matrices by softplus rectifier
@@ -171,11 +174,14 @@ class TWPCA(object):
 
         # initialize values for tensorflow variables
         self.assign_train_op(optimizer)
-        self.assign_warps(warps, normalize_warps)
+        self.assign_warps(warps)
         self.assign_factors()
 
     def assign_train_op(self, optimizer):
-        """Assign the training operation
+        """Assign the training operation.
+
+        Args:
+            optimizer: tf.train.Optimizer instance
         """
         self._opt = optimizer(self._lr)
         var_list = [v for k, v in self._train_vars.items() if k != 'warp'] + list(self._train_vars['warp'])
@@ -183,7 +189,7 @@ class TWPCA(object):
         utils.initialize_new_vars(self._sess)
 
     def assign_factors(self):
-        """Assign the factor matrices by matrix/tensor decomposition on warped data
+        """Assign the factor matrices by matrix/tensor decomposition on warped data.
         """
 
         # apply inverse warps to data to get a better estimate of initial factors
@@ -231,12 +237,11 @@ class TWPCA(object):
         # done initializing factors
         return self._sess.run(assignment_ops)
 
-    def assign_warps(self, warps, normalize_warps=True):
-        """Initialize the warping functions
+    def assign_warps(self, warps):
+        """Assign values to the warping functions.
 
         Args:
             warps (optional): numpy array (trials x shared_length) holding warping functions
-            normalize_warps (optional): if True, normalize warps
 
         If warps is not specified, the warps are initialized by the self.warpinit method
         """
@@ -285,14 +290,14 @@ class TWPCA(object):
             ops += [tf.assign(_v, tf.constant(v, dtype=tf.float32))]
         return self._sess.run(ops)
 
-    def fit(self, optimizer=None, niter=1000, lr=1e-3, sess=None, progressbar=True):
+    def fit(self, optimizer=None, niter=1000, lr=1e-3, progressbar=True):
         """Fit the twPCA model
 
         Args:
-            optimizer (optional): a tf.train.Optimizer class (default: AdamOptimizer)
+            optimizer (optional): a tf.train.Optimizer class. If provided, the model overwrites the
+                                  current training operation, effectively resetting the optimizer.
             niter (optional): number of iterations to run the optimizer for (default: 1000)
-            sess (optional): tensorflow session to use for running the computation. If None,
-                then a new session is created. (default: None)
+            lr (optional): float, learning rate for the optimizer (default: 1e-3)
             progressbar (optional): whether to print a progressbar (default: True)
         """
 
@@ -397,17 +402,20 @@ class TWPCA(object):
 
     @property
     def objective(self):
+        """Computes the full objective function that's optimized."""
         return self._sess.run(self._objective)
 
     @property
     def recon_cost(self):
+        """Computes the mean squared error of the model."""
         return self._sess.run(self._recon_cost)
 
     @property
     def regularization(self):
+        """Computes the regularization penalty on the model."""
         return self._sess.run(self._regularization)
 
     @property
     def _regularization(self):
-        """Computes the total regularization cost"""
+        """Computes the regularization term in tensorflow."""
         return sum(self._regularizers[key](param) for key, param in self._params.items())
