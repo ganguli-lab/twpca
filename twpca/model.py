@@ -1,11 +1,11 @@
 import numpy as np
-from functools import wraps
 from sklearn.decomposition import NMF, TruncatedSVD
 from tqdm import trange
 
 import tensorflow as tf
 from . import warp, utils
 from .regularizers import l2, curvature
+
 
 class TWPCA(object):
 
@@ -45,18 +45,18 @@ class TWPCA(object):
             origin_idx (optional): if not None, all warping functions are pinned (aligned) at this
                 index. (default: None)
         """
-
         self._sess = tf.Session() if sess is None else sess
 
-        # store the data in numpy and tensorflow
+        # store the data as a numpy array
         self.data = np.atleast_3d(data.astype(np.float32))
-        # set NaNs to zero so tensorflow doesn't choke
+
+        # convert to a tensorflow tensor and set NaNs to zero
         self._data = tf.constant(np.nan_to_num(self.data))
 
         # data dimensions
         self.n_trials, self.n_timepoints, self.n_neurons = self.data.shape
         self.n_components = n_components
-        
+
         # mask out missing data
         self.mask = np.isfinite(self.data).astype(np.float32)
         self.num_datapoints = np.sum(self.mask)
@@ -67,7 +67,7 @@ class TWPCA(object):
         # and then map that index back to the original mask
         rev_last_idx = np.argmax(np.all(self.mask, axis=-1)[:, ::-1], axis=1)
         self.last_idx = self.n_timepoints - rev_last_idx
-        
+
         # dimension of latent temporal factors
         if shared_length is None:
             self.shared_length = self.n_timepoints
@@ -91,16 +91,19 @@ class TWPCA(object):
         }
 
         # create all tensorflow variables
-        self._train_vars = {} # tensorflow variables that are optimized
+        self._train_vars = {}
+
         # factor matrix parameters
-        self._train_vars['time'] = tf.Variable(tf.zeros((self.n_timepoints, self.n_components)))
-        self._train_vars['neuron'] = tf.Variable(tf.zeros((self.n_neurons, self.n_components)))
+        self._train_vars['time'] = tf.Variable(tf.zeros((self.n_timepoints, self.n_components)), name='time_factors')
+        self._train_vars['neuron'] = tf.Variable(tf.zeros((self.n_neurons, self.n_components)), name='neuron_factors')
         if self.fit_trial_factors:
-            self._train_vars['trial'] = tf.Variable(tf.zeros((self.n_neurons, self.n_components)))
+            self._train_vars['trial'] = tf.Variable(tf.zeros((self.n_neurons, self.n_components)), name='trial_factors')
+
         # warp parameters
-        self.tau = tf.Variable(tf.zeros((self.n_trials, self.shared_length)))
-        self.tau_shift = tf.Variable(tf.zeros(self.n_trials))
-        self.tau_scale = tf.Variable(tf.zeros(self.n_trials))
+        self.tau = tf.Variable(tf.zeros((self.n_trials, self.shared_length)), name='tau')
+        self.tau_shift = tf.Variable(tf.zeros(self.n_trials), name='tau_shift')
+        self.tau_scale = tf.Variable(tf.zeros(self.n_trials), name='tau_scale')
+
         # learning rate for optimizers
         self._lr = tf.placeholder(tf.float32, shape=[])
 
@@ -128,12 +131,16 @@ class TWPCA(object):
         # Always include shift/scale with nonlinear transformation
         if warptype == 'nonlinear':
             self._train_vars['warp'] = [self.tau, self.tau_shift, self.tau_scale]
+
         elif warptype == 'affine':
             self._train_vars['warp'] = [self.tau_shift, self.tau_scale]
+
         elif warptype == 'shift':
             self._train_vars['warp'] = [self.tau_shift]
+
         elif warptype == 'scale':
             self._train_vars['warp'] = [self.tau_scale]
+
         else:
             valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale')
             raise ValueError("Invalid warptype={}. Must be one of {}".format(warptype, valid_warptypes))
@@ -153,6 +160,7 @@ class TWPCA(object):
         if self.fit_trial_factors:
             # trial i, time j, factor k, neuron n
             self._pred = tf.einsum('ik,ijk,nk->ijn', self._params['trial'], self._warped_time_factors, self._params['neuron'])
+
         else:
             # trial i, time j, factor k, neuron n
             self._pred = tf.einsum('ijk,nk->ijn', self._warped_time_factors, self._params['neuron'])
@@ -186,6 +194,7 @@ class TWPCA(object):
         if self.n_neurons == 1:
             time_fctr = np.nanmean(data, axis=0)
             neuron_fctr = np.atleast_2d([1.0])
+
         else:
             # do matrix decomposition on trial-averaged data matrix
             DecompModel = NMF if self.nonneg else TruncatedSVD
@@ -202,20 +211,20 @@ class TWPCA(object):
 
         # if necessary, apply inverse softplus
         if self.nonneg:
-            time_fctr = inverse_softplus(time_fctr)
-            neuron_fctr = inverse_softplus(neuron_fctr)
+            time_fctr = utils.inverse_softplus(time_fctr)
+            neuron_fctr = utils.inverse_softplus(neuron_fctr)
 
         # initialize the factors
-        assignment_ops = [tf.assign(self._train_vars['time'], time_fctr), 
+        assignment_ops = [tf.assign(self._train_vars['time'], time_fctr),
                           tf.assign(self._train_vars['neuron'], neuron_fctr)]
 
         # intialize trial_factors by pseudoinverse of neuron factor
         if self.fit_trial_factors:
             # TODO - fix this when data is missing at random
             Bpinv = np.linalg.pinv(neuron_fctr)
-            trial_fctr = np.empty((data.shape[0], n_components), dtype=np.float32)
+            trial_fctr = np.empty((data.shape[0], self.n_components), dtype=np.float32)
             for k, trial in enumerate(data):
-                t = last_idx[k] # last index before NaN
+                t = self.last_idx[k]    # last index before NaN
                 trial_fctr[k] = np.diag(np.linalg.pinv(time_fctr[:t]).dot(trial[:t]).dot(Bpinv.T))
             assignment_ops += [tf.assign(self._train_vars['neuron'], trial_fctr)]
 
@@ -260,8 +269,8 @@ class TWPCA(object):
             for tidx, trial in enumerate(self.data):
                 xcorr = np.zeros(self.n_timepoints)
                 for n in range(self.n_neurons):
-                    xcorr += utils.correlate_nanmean(psth[:, n], trial[:last_idx[tidx], n], mode='same')
-                shift.append(np.argmax(xcorr) - (last_idx[tidx] / 2))
+                    xcorr += utils.correlate_nanmean(psth[:, n], trial[:self.last_idx[tidx], n], mode='same')
+                shift.append(np.argmax(xcorr) - (self.last_idx[tidx] / 2))
             shift = np.array(shift)
             scale = np.ones(self.n_trials)
             tau = np.zeros((self.n_trials, self.n_timepoints))
@@ -364,7 +373,7 @@ class TWPCA(object):
             if self.fit_trial_factors:
                 warped_factors = self._sess.run(self._warped_time_factors)
                 trial_factors = self._sess.run(self._params['trial'])
-                warped_factors *= trial_factors[:, None, :] # broadcast multiply across trials
+                warped_factors *= trial_factors[:, None, :]     # broadcast multiply across trials
             else:
                 warped_factors = self._sess.run(self._warped_time_factors)
             # check input size
@@ -381,8 +390,8 @@ class TWPCA(object):
             # do a least-squares solve to fit the neuron factors
             neuron_factors = np.linalg.lstsq(time_factors[mask, :], X_unf[mask, :])[0]
             # reconstruct and reshape the predicted activity
-            pred = np.dot(neuron_factors.T, time_factors.T) # (neurons x trials-time)
-            pred = pred.T.reshape(*X.shape) # (trials x time x neuron)
+            pred = np.dot(neuron_factors.T, time_factors.T)     # (neurons x trials-time)
+            pred = pred.T.reshape(*X.shape)     # (trials x time x neuron)
 
             return pred
 
@@ -402,4 +411,3 @@ class TWPCA(object):
     def _regularization(self):
         """Computes the total regularization cost"""
         return sum(self._regularizers[key](param) for key, param in self._params.items())
-
