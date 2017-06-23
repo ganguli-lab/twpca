@@ -122,7 +122,7 @@ class TWPCA(object):
 
         # sets up tensorflow variables for warps
         _pos_tau = tf.nn.softplus(self.tau) / tf.log(2.0)
-        _warp = self.tau_scale[:, None] * tf.cumsum(_pos_tau, 1) + self.tau_shift[:, None]
+        _warp = tf.nn.softplus(self.tau_scale[:, None]) * tf.cumsum(_pos_tau, 1) + self.tau_shift[:, None]
 
         # Force mean intercept to be zero and min slope to be one
         if center_taus:
@@ -260,18 +260,18 @@ class TWPCA(object):
             if normalize_warps:
                 warps *= self.n_timepoints / np.max(warps)
             shift = warps[:, 0] - 1
-            scale = np.ones(self.n_trials)
+            scale = utils.inverse_softplus(np.ones(self.n_trials))
             dtau = np.hstack((np.ones((self.n_trials, 1)), np.diff(warps, axis=1)))
             tau = utils.inverse_softplus(np.maximum(0, dtau) * np.log(2.0))
 
         elif self.warpinit == 'identity':
-            scale = np.ones(self.n_trials)
+            scale = utils.inverse_softplus(np.ones(self.n_trials))
             shift = np.zeros(self.n_trials)
             tau = np.zeros((self.n_trials, self.n_timepoints))
 
         elif self.warpinit == 'linear':
             # warps linearly stretched to common trial length
-            scale = np.max(self.last_idx) / np.array(self.last_idx)
+            scale = utils.inverse_softplus(np.max(self.last_idx) / np.array(self.last_idx))
             shift = np.zeros(self.n_trials)
             tau = np.zeros((self.n_trials, self.n_timepoints))
 
@@ -285,7 +285,7 @@ class TWPCA(object):
                     xcorr += utils.correlate_nanmean(psth[:, n], trial[:self.last_idx[tidx], n], mode='same')
                 shift.append(np.argmax(xcorr) - (self.last_idx[tidx] / 2))
             shift = np.array(shift)
-            scale = np.ones(self.n_trials)
+            scale = utils.inverse_softplus(np.ones(self.n_trials))
             tau = np.zeros((self.n_trials, self.n_timepoints))
 
         else:

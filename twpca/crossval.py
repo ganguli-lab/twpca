@@ -51,7 +51,6 @@ def cross_validate(data, nfits, drop_prob, model_kw, fit_kw):
 
         # fit the model to the training set
         tf.reset_default_graph()
-        sess = tf.Session()
         model = TWPCA(traindata, **model_kw)
         model.fit(**fit_kw)
 
