@@ -11,17 +11,16 @@ from .utils import stable_rank
 
 __all__ = ['cross_validate', 'hyperparam_search']
 
-def cross_validate(model, data, nfits, drop_prob, **fit_kw):
+def cross_validate(data, nfits, drop_prob, model_kw, fit_kw):
     """Runs cross-validation on TWPCA model.
 
     Args
     ---
-    model : TWPCA model instance
     data (ndarray) : data tensor, trials x time x neurons
     nfits (int) : number of cross-validation runs
     drop_prob (float) : probability of setting element of data to nan
-
-    Note: additional keyword args are passed to model.fit(...)
+    model_kw (dict) : arguments passed to create TWPCA
+    fit_kw (dict) : arguments passed to TWPCA.fit(...)
 
     Returns
     -------
@@ -31,7 +30,7 @@ def cross_validate(model, data, nfits, drop_prob, **fit_kw):
 
     # check inputs
     if drop_prob >= 1 or drop_prob < 0:
-        raise ValueError('Censor probability must be greater than zero and less than one.')
+        raise ValueError('Drop probability must be greater than zero and less than one.')
 
     # store results in list
     results = []
@@ -53,7 +52,8 @@ def cross_validate(model, data, nfits, drop_prob, **fit_kw):
         # fit the model to the training set
         tf.reset_default_graph()
         sess = tf.Session()
-        model.fit(traindata, sess=sess, **fit_kw)
+        model = TWPCA(traindata, **model_kw)
+        model.fit(**fit_kw)
 
         # compute mean error on test set
         resid = data - model.predict()
@@ -61,21 +61,21 @@ def cross_validate(model, data, nfits, drop_prob, **fit_kw):
 
         results.append({
              'params': model.params,
-             'train_error': model._sess.run(model.recon_cost),
+             'train_error': model.recon_cost,
              'test_error': test_error,
              'obj_history': model.obj_history
             }
         )
 
         # clean-up tensorflow
-        sess.close()
+        model._sess.close()
 
     return results
 
 def hyperparam_search(data, n_components, warp_scales, time_scales,
                       nfits=1, drop_prob=0.1, warp_reg=None, time_reg=None,
-                      fit_kw=dict(lr=(1e-1, 1e-2), niter=(250, 500), progressbar=False),
-                      **model_kw):
+                      fit_kw=dict(lr=1e-2, niter=500, progressbar=False),
+                      model_kw=dict()):
     """Performs cross-validation over number of components, warp regularization scale, and
     temporal regularization scale.
 
@@ -107,7 +107,7 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
                     the time factors. By default,
                     `time_reg = twpca.regularizers.curvature(s, power=2, axis=0)`.
         fit_kw: dict, keyword arguments passed to model.fit
-        **model_kw: additional keywords are passed to twpca.TWPCA(...)
+        model_kw: dict, keyword arguments / model options passed to twpca.TWPCA(...)
 
     Returns:
         results: dict, contains parameters and statistics of fitted models
@@ -132,8 +132,11 @@ def hyperparam_search(data, n_components, warp_scales, time_scales,
     # run cross-validation for all specified hyperparameters
     for nc, ws, ts in zip(tqdm(n_components), warp_scales, time_scales):
 
-        model = TWPCA(nc, warp_regularizer=warp_reg(ws), time_regularizer=time_reg(ts), **model_kw)
-        _result = cross_validate(model, data, nfits, drop_prob, **fit_kw)
+        model_args = dict(n_components=nc,
+                          warp_regularizer=warp_reg(ws),
+                          time_regularizer=time_reg(ts),
+                          **model_kw)
+        _result = cross_validate(data, nfits, drop_prob, model_args, fit_kw)
 
         results['n_components'].append(nc)
         results['warp_scale'].append(ws)
