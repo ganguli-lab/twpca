@@ -68,6 +68,8 @@ class TWPCA(object):
 
         # data dimensions
         self.n_trials, self.n_timepoints, self.n_neurons = self.data.shape
+        if n_components > self.n_neurons:
+            raise ValueError('TWPCA does not support models with more components than neurons')
         self.n_components = n_components
 
         # mask out missing data
@@ -260,20 +262,20 @@ class TWPCA(object):
             if normalize_warps:
                 warps *= self.n_timepoints / np.max(warps)
             shift = warps[:, 0] - 1
-            scale = utils.inverse_softplus(np.ones(self.n_trials))
-            dtau = np.hstack((np.ones((self.n_trials, 1)), np.diff(warps, axis=1)))
-            tau = utils.inverse_softplus(np.maximum(0, dtau) * np.log(2.0))
+            scale = np.ones(self.n_trials)
+            tau = np.hstack((np.ones((self.n_trials, 1)), np.diff(warps, axis=1)))
+            tau = np.maximum(0, tau) # make sure warps are monotonic
 
         elif self.warpinit == 'identity':
-            scale = utils.inverse_softplus(np.ones(self.n_trials))
-            shift = np.zeros(self.n_trials)
-            tau = np.zeros((self.n_trials, self.n_timepoints))
+            scale = np.ones(self.n_trials) * (self.shared_length / self.n_timepoints)
+            shift = -np.ones(self.n_trials) # zero index
+            tau = np.ones((self.n_trials, self.n_timepoints))
 
         elif self.warpinit == 'linear':
             # warps linearly stretched to common trial length
-            scale = utils.inverse_softplus(np.max(self.last_idx) / np.array(self.last_idx))
-            shift = np.zeros(self.n_trials)
-            tau = np.zeros((self.n_trials, self.n_timepoints))
+            scale = np.max(self.last_idx) / np.array(self.last_idx)
+            shift = -np.ones(self.n_trials) # zero index
+            tau = np.ones((self.n_trials, self.n_timepoints))
 
         elif self.warpinit == 'shift':
             # use cross-correlation to initialize the shifts
@@ -285,12 +287,16 @@ class TWPCA(object):
                     xcorr += utils.correlate_nanmean(psth[:, n], trial[:self.last_idx[tidx], n], mode='same')
                 shift.append(np.argmax(xcorr) - (self.last_idx[tidx] / 2))
             shift = np.array(shift)
-            scale = utils.inverse_softplus(np.ones(self.n_trials))
-            tau = np.zeros((self.n_trials, self.n_timepoints))
+            scale = np.ones(self.n_trials)
+            tau = np.ones((self.n_trials, self.n_timepoints))
 
         else:
             _args = (self.warpinit, ('identity', 'linear', 'shift'))
             raise ValueError('Invalid warpinit={}. Must be one of {}'.format(*_args))
+
+        # invert the softplus transform that is applied to scale
+        scale = utils.inverse_softplus(scale)
+        tau = utils.inverse_softplus(tau * np.log(2.0))
 
         # assign the warps and return
         ops = []

@@ -63,7 +63,7 @@ def stable_rank(matrix):
 
 def inverse_softplus(y):
     """Inverse of the softplus function."""
-    return np.log(np.exp(y + 1e-5) - 1)
+    return np.log(np.exp(y + 1e-8) - 1)
 
 def correlate_nanmean(x, y, **kwargs):
     """Wrapper around np.correlate that handles NaNs."""
