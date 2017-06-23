@@ -49,7 +49,15 @@ class TWPCA(object):
                     these functions.
             optimizer : tf.train.Optimizer class, that creates the initial training operation
                         (default: AdamOptimizer)
+
+        Note:
+            All attributes that are tensorflow variables are preceded by an underscore, while python-
+            accessible versions of these attributes lack the underscore. For example, `self.data`
+            contains the numpy array passed in by the user, while `self._data` refers to the
+            (constant) Tensor holding this data in the tensorflow graph.
         """
+
+        # create tensorflow session
         self._sess = tf.Session() if sess is None else sess
 
         # store the data as a numpy array
