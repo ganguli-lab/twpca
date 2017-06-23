@@ -179,6 +179,7 @@ class TWPCA(object):
             self._pred = tf.einsum('ijk,nk->ijn', self._warped_time_factors, self._params['neuron'])
 
         # objective function (note that nan values are zeroed out by self._mask)
+        self._regularization = tf.reduce_sum([self._regularizers[k](self._params[k]) for k in self._params.keys()])
         self._recon_cost = tf.reduce_sum(self._mask * (self._pred - self._data)**2) / self.num_datapoints
         self._objective = self._recon_cost + self._regularization
 
@@ -430,6 +431,6 @@ class TWPCA(object):
         return self._sess.run(self._regularization)
 
     @property
-    def _regularization(self):
-        """Computes the regularization term in tensorflow."""
-        return sum(self._regularizers[key](param) for key, param in self._params.items())
+    def warped_time_factors(self):
+        """Computes the regularization penalty on the model."""
+        return self._sess.run(self._warped_time_factors)
