@@ -19,7 +19,7 @@ We provide code for twPCA in python (note: we use tensorflow as a backend for co
 
 To apply twPCA to your own dataset, first install the code (`pip install twpca`) and load in your favorite dataset and shape it so that it is a 3D numpy array with dimensions (number of trials, number of timepoints per trial, number of neurons). For example, if you have a dataset with 100 trials each lasting 50 samples with 25 neurons, then your array should have shape (100, 50, 25).
 
-Then, you can apply twPCA to your data by running `from twpca import TWPCA; model = TWPCA(n_components).fit(data)` where `n_components` is the number of low-rank factors you wish to fit and `data` is a 3D numpy as described above. A more thorough example is given below:
+Then, you can apply twPCA to your data by running `from twpca import TWPCA; model = TWPCA(data, n_components).fit()` where `n_components` is the number of low-rank factors you wish to fit and `data` is a 3D numpy as described above. A more thorough example is given below:
 
 ```python
 from twpca import TWPCA
@@ -33,14 +33,14 @@ feature, aligned_data, raw_data = jittered_neuron()
 # applies TWPCA to your dataset with the given number of components (this follows the
 # scikit-learn fit/trasnform API)
 n_components = 1
-model = TWPCA(n_components).fit(raw_data)
+model = TWPCA(raw_data, n_components).fit()
 
 # the model object now contains the low-rank factors
 time_factors = model.params['time']         # compare this to the ground truth feature
 neuron_factors = model.params['neuron']     # in this single-neuron example, this will be a scalar
 
 # you can use the model object to align data (compare this to the aligned_data from above)
-estimated_aligned_data = model.transform(raw_data)
+estimated_aligned_data = model.transform()
 ```
 
 We have provided a more thorough [demo notebook](https://github.com/ganguli-lab/twpca/blob/master/demo.ipynb) demonstrating the application of tWPCA to a synthetic dataset.
