@@ -448,5 +448,5 @@ class TWPCA(object):
 
     @property
     def warped_time_factors(self):
-        """Computes the regularization penalty on the model."""
+        """Computes the time factors warped into clock space for each trial."""
         return self._sess.run(self._warped_time_factors)
