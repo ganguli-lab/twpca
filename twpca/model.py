@@ -161,22 +161,6 @@ class TWPCA(object):
         self._recon_cost = tf.reduce_sum(self._mask * (self._pred - self._data)**2) / self.num_datapoints
         self._objective = self._recon_cost + self._regularization
 
-        # declare which variables are trainable
-        self._trainable_vars = [v for k, v in self._vars.items() if k != 'warp'] # time, neuron, trial factors
-        if warptype == 'nonlinear':
-            self._trainable_vars += [self._vars['tau'], self._vars['tau_shift'], self._vars['tau_scale']]
-        elif warptype == 'affine':
-            self._trainable_vars += [self._vars['tau_shift'], self._vars['tau_scale']]
-        elif warptype == 'shift':
-            self._trainable_vars += [self._vars['tau_shift']]
-        elif warptype == 'scale':
-            self._trainable_vars += [self._vars['tau_scale']]
-        elif warpetype == 'fixed':
-            pass # no warp parameters are trainable
-        else:
-            valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale', 'fixed')
-            raise ValueError("Invalid warptype={}. Must be one of {}".format(warptype, valid_warptypes))
-
         # initialize optimizer
         self._lr = tf.placeholder(tf.float32, shape=[])
         self.assign_train_op(optimizer)
@@ -188,8 +172,26 @@ class TWPCA(object):
         Args:
             optimizer: tf.train.Optimizer instance
         """
+
+        # declare which variables are trainable
+        trainable_vars = set(self._vars.keys())
+        if self.warptype == 'nonlinear':
+            pass # all warp variables are trainable
+        elif self.warptype == 'affine':
+            trainable_vars.remove('tau')
+        elif self.warptype == 'shift':
+            trainable_vars -= set('tau', 'tau_scale')
+        elif self.warptype == 'scale':
+            trainable_vars -= set('tau', 'tau_shift')
+        elif self.warpetype == 'fixed':
+            trainable_vars -= set('tau', 'tau_scale', 'tau_shift')
+        else:
+            valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale', 'fixed')
+            raise ValueError("Invalid warptype={}. Must be one of {}".format(warptype, valid_warptypes))
+
+        var_list = [self._vars[k] for k in trainable_vars]
         self._opt = optimizer(self._lr)
-        self._train_op = self._opt.minimize(self._objective, var_list=self._trainable_vars)
+        self._train_op = self._opt.minimize(self._objective, var_list=var_list)
         utils.initialize_new_vars(self._sess)
 
     def assign_factors(self):
@@ -331,7 +333,7 @@ class TWPCA(object):
 
         # reinitialize all variables if prompted by user
         if reinitialize:
-            self._sess.run([tf.variables_initializer(v) for v in self._train_var_list])
+            self._sess.run(tf.variables_initializer(list(self._vars.values())))
 
         # reset optimizer if set by user
         if optimizer is not None:
@@ -425,11 +427,11 @@ class TWPCA(object):
 
     def dump(self):
         """Serializes model variables"""
-        return {k : self._sess.run(v) for k, v in self._vars.items()}
+        return self._sess.run(self._vars)
 
     def load(self, new_vars):
         """Assigns model variables from numpy arrays"""
-        [self._sess.run([tf.assign(self._vars[k], v)]) for k, v in new_vars.items()]
+        self._sess.run([tf.assign(self._vars[k], v) for k, v in new_vars.items()])
 
     @property
     def objective(self):
