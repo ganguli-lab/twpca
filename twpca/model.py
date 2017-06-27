@@ -9,7 +9,6 @@ from .regularizers import l2, curvature
 
 
 class TWPCA(object):
-
     def __init__(self, data, n_components,
                  sess=None,
                  shared_length=None,
@@ -108,7 +107,7 @@ class TWPCA(object):
 
         # Create dictionaries to hold tensorflow variables, and model parameters. Various transformations (e.g. softplus
         # to enforce nonnegativity) are applied to the variables. The resulting parameters are typically all the user
-        # needs to care about / interpret. 
+        # needs to care about / interpret.
         self._vars, self._params = {}, {}
 
         # initialize the warping functions
@@ -188,7 +187,7 @@ class TWPCA(object):
             trainable_vars -= set('tau', 'tau_scale', 'tau_shift')
         else:
             valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale', 'fixed')
-            raise ValueError("Invalid warptype={}. Must be one of {}".format(warptype, valid_warptypes))
+            raise ValueError("Invalid warptype={}. Must be one of {}".format(self.warptype, valid_warptypes))
 
         var_list = [self._vars[k] for k in trainable_vars]
         self._opt = optimizer(self._lr)
@@ -437,8 +436,8 @@ class TWPCA(object):
     @property
     def shifts_and_scales(self):
         if self.warptype == 'nonlinear':
-            warnings.warn("TWPCA was fit with warptype == 'nonlinear', so" + \
-                          "shifts will only be approximate. Consider fitting" + \
+            warnings.warn("TWPCA was fit with warptype == 'nonlinear', so" +
+                          "shifts will only be approximate. Consider fitting" +
                           "with warptype == 'affine', 'shift', or 'scale'.")
         _v = [self._vars['tau_shift'], self._vars['tau_scale']]
         shifts, scales = self._sess.run(_v)
