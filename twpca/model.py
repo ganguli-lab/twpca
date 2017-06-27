@@ -442,7 +442,7 @@ class TWPCA(object):
                           "with warptype == 'affine', 'shift', or 'scale'.")
         _v = [self._vars['tau_shift'], self._vars['tau_scale']]
         shifts, scales = self._sess.run(_v)
-        return utils.inverse_softplus(scales)
+        return shifts, utils.softplus(scales)
 
     @property
     def objective(self):
