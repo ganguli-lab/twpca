@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.decomposition import NMF, TruncatedSVD
 from tqdm import trange
+import warnings
 
 import tensorflow as tf
 from . import warp, utils
@@ -432,6 +433,16 @@ class TWPCA(object):
     def load(self, new_vars):
         """Assigns model variables from numpy arrays"""
         self._sess.run([tf.assign(self._vars[k], v) for k, v in new_vars.items()])
+
+    @property
+    def shifts_and_scales(self):
+        if self.warptype == 'nonlinear':
+            warnings.warn("TWPCA was fit with warptype == 'nonlinear', so" + \
+                          "shifts will only be approximate. Consider fitting" + \
+                          "with warptype == 'affine', 'shift', or 'scale'.")
+        _v = [self._vars['tau_shift'], self._vars['tau_scale']]
+        shifts, scales = self._sess.run(_v)
+        return utils.inverse_softplus(scales)
 
     @property
     def objective(self):
