@@ -333,8 +333,9 @@ class TWPCA(object):
         # run the optimizer
         iterator = trange if progressbar else range
         ops = [self._objective, self._train_op]
-        feed = {self._learning_rate: lr}
-        self.obj_history += [self._sess.run(ops, feed_dict=feed)[0] for _ in iterator(niter)]
+        for l, n in zip(lr, niter):
+            feed = {self._learning_rate: l}
+            self.obj_history += [self._sess.run(ops, feed_dict=feed)[0] for _ in iterator(n)]
 
         return self
 
