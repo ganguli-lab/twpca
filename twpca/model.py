@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.decomposition import NMF, TruncatedSVD
 from tqdm import trange
+import warnings
 
 import tensorflow as tf
 from . import warp, utils
@@ -8,7 +9,6 @@ from .regularizers import l2, curvature
 
 
 class TWPCA(object):
-
     def __init__(self, data, n_components,
                  sess=None,
                  shared_length=None,
@@ -105,26 +105,17 @@ class TWPCA(object):
             'warp': warp_regularizer,
         }
 
-        # create all tensorflow variables
-        self._train_vars = {}
+        # Create dictionaries to hold tensorflow variables, and model parameters. Various transformations (e.g. softplus
+        # to enforce nonnegativity) are applied to the variables. The resulting parameters are typically all the user
+        # needs to care about / interpret.
+        self._vars, self._params = {}, {}
 
-        # factor matrix parameters
-        self._train_vars['time'] = tf.Variable(tf.zeros((self.n_timepoints, self.n_components)), name='time_factors')
-        self._train_vars['neuron'] = tf.Variable(tf.zeros((self.n_neurons, self.n_components)), name='neuron_factors')
-        if self.fit_trial_factors:
-            self._train_vars['trial'] = tf.Variable(tf.zeros((self.n_neurons, self.n_components)), name='trial_factors')
-
-        # warp parameters
-        self.tau = tf.Variable(tf.zeros((self.n_trials, self.shared_length)), name='tau')
-        self.tau_shift = tf.Variable(tf.zeros(self.n_trials), name='tau_shift')
-        self.tau_scale = tf.Variable(tf.zeros(self.n_trials), name='tau_scale')
-
-        # learning rate for optimizers
-        self._lr = tf.placeholder(tf.float32, shape=[])
+        # initialize the warping functions
+        self.assign_warps(warps)
 
         # sets up tensorflow variables for warps
-        _pos_tau = tf.nn.softplus(self.tau) / tf.log(2.0)
-        _warp = tf.nn.softplus(self.tau_scale[:, None]) * tf.cumsum(_pos_tau, 1) + self.tau_shift[:, None]
+        _pos_tau = tf.nn.softplus(self._vars['tau']) / tf.log(2.0)
+        _warp = tf.nn.softplus(self._vars['tau_scale'][:, None]) * tf.cumsum(_pos_tau, 1) + self._vars['tau_shift'][:, None]
 
         # Force mean intercept to be zero and min slope to be one
         if center_taus:
@@ -138,32 +129,19 @@ class TWPCA(object):
             _warp = tf.clip_by_value(pin, 0, self.n_timepoints - 1)
 
         # store the warping and inverse warping function
-        self._params = {'warp': _warp}
+        self._params['warp'] = _warp
         _args = [_warp, self.n_timepoints, self.shared_length]
         self._inv_warp = tf.py_func(warp._invert_warp_indices, _args, tf.float32)
 
-        # declare which parameters are trainable
-        # Always include shift/scale with nonlinear transformation
-        if warptype == 'nonlinear':
-            self._train_vars['warp'] = [self.tau, self.tau_shift, self.tau_scale]
-        elif warptype == 'affine':
-            self._train_vars['warp'] = [self.tau_shift, self.tau_scale]
-        elif warptype == 'shift':
-            self._train_vars['warp'] = [self.tau_shift]
-        elif warptype == 'scale':
-            self._train_vars['warp'] = [self.tau_scale]
-        elif warpetype == 'fixed':
-            self._train_vars['warp'] = []
-        else:
-            valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale', 'fixed')
-            raise ValueError("Invalid warptype={}. Must be one of {}".format(warptype, valid_warptypes))
+        # initialize the factor matrices
+        self.assign_factors()
 
         # if nonnegative model, transform factor matrices by softplus rectifier
         f = tf.nn.softplus if self.nonneg else tf.identity
-        self._params['time'] = f(self._train_vars['time'])
-        self._params['neuron'] = f(self._train_vars['neuron'])
+        self._params['time'] = f(self._vars['time'])
+        self._params['neuron'] = f(self._vars['neuron'])
         if self.fit_trial_factors:
-            self._params['trial'] = f(self._train_vars['trial'])
+            self._params['trial'] = f(self._vars['trial'])
 
         # compute warped time factors for each trial
         _tiled_fctr = tf.tile(tf.expand_dims(self._params['time'], [0]), [self.n_trials, 1, 1])
@@ -183,10 +161,10 @@ class TWPCA(object):
         self._recon_cost = tf.reduce_sum(self._mask * (self._pred - self._data)**2) / self.num_datapoints
         self._objective = self._recon_cost + self._regularization
 
-        # initialize values for tensorflow variables
+        # initialize optimizer
+        self._lr = tf.placeholder(tf.float32, shape=[])
         self.assign_train_op(optimizer)
-        self.assign_warps(warps)
-        self.assign_factors()
+        utils.initialize_new_vars(self._sess)
 
     def assign_train_op(self, optimizer):
         """Assign the training operation.
@@ -194,8 +172,25 @@ class TWPCA(object):
         Args:
             optimizer: tf.train.Optimizer instance
         """
+
+        # declare which variables are trainable
+        trainable_vars = set(self._vars.keys())
+        if self.warptype == 'nonlinear':
+            pass # all warp variables are trainable
+        elif self.warptype == 'affine':
+            trainable_vars.remove('tau')
+        elif self.warptype == 'shift':
+            trainable_vars -= set('tau', 'tau_scale')
+        elif self.warptype == 'scale':
+            trainable_vars -= set('tau', 'tau_shift')
+        elif self.warpetype == 'fixed':
+            trainable_vars -= set('tau', 'tau_scale', 'tau_shift')
+        else:
+            valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale', 'fixed')
+            raise ValueError("Invalid warptype={}. Must be one of {}".format(self.warptype, valid_warptypes))
+
+        var_list = [self._vars[k] for k in trainable_vars]
         self._opt = optimizer(self._lr)
-        var_list = [v for k, v in self._train_vars.items() if k != 'warp'] + list(self._train_vars['warp'])
         self._train_op = self._opt.minimize(self._objective, var_list=var_list)
         utils.initialize_new_vars(self._sess)
 
@@ -231,11 +226,7 @@ class TWPCA(object):
             time_fctr = utils.inverse_softplus(time_fctr)
             neuron_fctr = utils.inverse_softplus(neuron_fctr)
 
-        # initialize the factors
-        assignment_ops = [tf.assign(self._train_vars['time'], time_fctr),
-                          tf.assign(self._train_vars['neuron'], neuron_fctr)]
-
-        # intialize trial_factors by pseudoinverse of neuron factor
+        # initialize trial_factors by pseudoinverse of neuron factor
         if self.fit_trial_factors:
             # TODO - fix this when data is missing at random
             Bpinv = np.linalg.pinv(neuron_fctr)
@@ -243,10 +234,20 @@ class TWPCA(object):
             for k, trial in enumerate(data):
                 t = self.last_idx[k]    # last index before NaN
                 trial_fctr[k] = np.diag(np.linalg.pinv(time_fctr[:t]).dot(trial[:t]).dot(Bpinv.T))
-            assignment_ops += [tf.assign(self._train_vars['neuron'], trial_fctr)]
 
-        # done initializing factors
-        return self._sess.run(assignment_ops)
+        # check if variables have been created yet. If so, overwrite them, otherwise create
+        # them and store them in self._vars
+        if 'time' in self._vars.keys():
+            assignment_ops = [tf.assign(self._vars['time'], time_fctr),
+                              tf.assign(self._vars['neuron'], neuron_fctr)]
+            if self.fit_trial_factors:
+                assignment_ops += [tf.assign(self._vars['neuron'], trial_fctr)]
+            self._sess.run(assignment_ops)
+        else:
+            self._vars['time'] = tf.Variable(time_fctr, name='time_factors', dtype=tf.float32)
+            self._vars['neuron'] = tf.Variable(neuron_fctr, name='neuron_factors', dtype=tf.float32)
+            if self.fit_trial_factors:
+                self._vars['trial'] = tf.Variable(trial_fctr, name='trial_factors', dtype=tf.float32)
 
     def assign_warps(self, warps):
         """Assign values to the warping functions.
@@ -260,12 +261,10 @@ class TWPCA(object):
         # different warp intializations
         if warps is not None:
             # warps proved by user
-            if normalize_warps:
-                warps *= self.n_timepoints / np.max(warps)
             shift = warps[:, 0] - 1
             scale = np.ones(self.n_trials)
-            tau = np.hstack((np.ones((self.n_trials, 1)), np.diff(warps, axis=1)))
-            tau = np.maximum(0, tau) # make sure warps are monotonic
+            dt = np.maximum(0, np.diff(warps, axis=1)) # enforce monotonic increasing warps
+            tau = np.hstack((np.ones((self.n_trials, 1)), dt))
 
         elif self.warpinit == 'identity':
             scale = np.ones(self.n_trials) * (self.shared_length / self.n_timepoints)
@@ -299,13 +298,20 @@ class TWPCA(object):
         scale = utils.inverse_softplus(scale)
         tau = utils.inverse_softplus(tau * np.log(2.0))
 
-        # assign the warps and return
-        ops = []
-        for _v, v in zip((self.tau_shift, self.tau_scale, self.tau), (shift, scale, tau)):
-            ops += [tf.assign(_v, tf.constant(v, dtype=tf.float32))]
-        return self._sess.run(ops)
+        # check if warps were already initialized. If so overwrite them, otherwise create them
+        if 'warp' in self._params.keys():
+            ops = []
+            tau_vars = (self._vars['tau_shift'], self._vars['tau_scale'], self._vars['tau'])
+            for _v, v in zip(tau_vars, (shift, scale, tau)):
+                ops += [tf.assign(_v, tf.constant(v, dtype=tf.float32))]
+            self._sess.run(ops)
+        else:
+            self._vars['tau'] = tf.Variable(tau, name='tau', dtype=tf.float32)
+            self._vars['tau_shift'] = tf.Variable(shift, name='tau_shift', dtype=tf.float32)
+            self._vars['tau_scale'] = tf.Variable(scale, name='tau_scale', dtype=tf.float32)
+            utils.initialize_new_vars(self._sess)
 
-    def fit(self, optimizer=None, niter=1000, lr=1e-3, progressbar=True):
+    def fit(self, optimizer=None, niter=1000, lr=1e-3, progressbar=True, reinitialize=False):
         """Fit the twPCA model
 
         Args:
@@ -324,6 +330,10 @@ class TWPCA(object):
                 raise ValueError("niter and lr must have the same length.")
         else:
             raise ValueError("niter and lr must either be numbers or iterables of the same length.")
+
+        # reinitialize all variables if prompted by user
+        if reinitialize:
+            self._sess.run(tf.variables_initializer(list(self._vars.values())))
 
         # reset optimizer if set by user
         if optimizer is not None:
@@ -357,7 +367,7 @@ class TWPCA(object):
         if data is None:
             data = self._data
         elif isinstance(data, np.ndarray):
-            data = tf.constant(data, dtype=tf.float32)
+            data = tf.constant(np.atleast_3d(data), dtype=tf.float32)
         elif not isinstance(data, tf.Tensor):
             raise ValueError("X must be a numpy array or tensorflow tensor")
 
@@ -415,6 +425,24 @@ class TWPCA(object):
 
             return pred
 
+    def dump(self):
+        """Serializes model variables"""
+        return self._sess.run(self._vars)
+
+    def load(self, new_vars):
+        """Assigns model variables from numpy arrays"""
+        self._sess.run([tf.assign(self._vars[k], v) for k, v in new_vars.items()])
+
+    @property
+    def shifts_and_scales(self):
+        if self.warptype == 'nonlinear':
+            warnings.warn("TWPCA was fit with warptype == 'nonlinear', so" +
+                          "shifts will only be approximate. Consider fitting" +
+                          "with warptype == 'affine', 'shift', or 'scale'.")
+        _v = [self._vars['tau_shift'], self._vars['tau_scale']]
+        shifts, scales = self._sess.run(_v)
+        return shifts, utils.softplus(scales)
+
     @property
     def objective(self):
         """Computes the full objective function that's optimized."""
@@ -432,5 +460,5 @@ class TWPCA(object):
 
     @property
     def warped_time_factors(self):
-        """Computes the regularization penalty on the model."""
+        """Computes the time factors warped into clock space for each trial."""
         return self._sess.run(self._warped_time_factors)
