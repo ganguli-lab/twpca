@@ -96,7 +96,7 @@ class TWPCA(object):
         else:
             self.shared_length = shared_length
 
-        # store regularization terms (these will match the variables in _params)
+        # get regularization terms (these will match the variables in _params)
         regularizers = {
             'trial': trial_regularizer,
             'time': time_regularizer,
@@ -122,7 +122,7 @@ class TWPCA(object):
         self.tau_scale = tf.Variable(tf.zeros(self.n_trials), name='tau_scale')
 
         # learning rate for optimizers
-        self._learning_rate = tf.placeholder(tf.float32, shape=[])
+        self._learning_rate = tf.placeholder(tf.float32, shape=[], name="learning_rate")
 
         # sets up tensorflow variables for warps
         _pos_tau = tf.nn.softplus(self.tau) / tf.log(2.0)
@@ -181,10 +181,10 @@ class TWPCA(object):
             self._pred = tf.einsum('ijk,nk->ijn', self._warped_time_factors, self._params['neuron'])
 
         # objective function (note that nan values are zeroed out by _mask)
-        regularization = tf.reduce_sum([regularizers[k](self._params[k])
-                                        for k in self._params.keys()])
-        recon_cost = tf.reduce_sum(_mask * (self._pred - self._data)**2) / num_datapoints
-        self._objective = recon_cost + regularization
+        self._regularization = tf.reduce_sum([regularizers[k](self._params[k])
+                                              for k in self._params.keys()])
+        self._recon_cost = tf.reduce_sum(_mask * (self._pred - self._data)**2) / num_datapoints
+        self._objective = self._recon_cost + self._regularization
 
         # initialize values for tensorflow variables
         self.create_train_op(optimizer)
