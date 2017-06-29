@@ -59,7 +59,12 @@ def stable_rank(matrix):
 
 def inverse_softplus(y):
     """Inverse of the softplus function."""
-    return np.log1p(np.exp(y + 1e-8) - 2)
+    return np.log1p(np.exp(y) - 2 + 1e-8)
+
+
+def softplus(x):
+    """Softplus rectifier function."""
+    return np.log1p(np.exp(x))
 
 
 def correlate_nanmean(*args, **kwargs):
