@@ -4,11 +4,6 @@ TWPCA utilities
 import numpy as np
 import tensorflow as tf
 
-def printvars():
-    """Prints all tensorflow variables
-    """
-    for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
-        print(v.name, v.get_shape().as_list())
 
 def get_uninitialized_vars(sess, var_list=None):
     """Gets a uninitialized variables in the current session
@@ -61,17 +56,17 @@ def stable_rank(matrix):
     svals_squared = np.linalg.svd(matrix, full_matrices=False, compute_uv=False) ** 2
     return svals_squared.sum() / svals_squared.max()
 
+
 def inverse_softplus(y):
     """Inverse of the softplus function."""
-    return np.log(np.exp(y) - 1 + 1e-8)
+    return np.log1p(np.exp(y) - 2 + 1e-8)
+
 
 def softplus(x):
     """Softplus rectifier function."""
-    np.log(np.exp(x) + 1)
+    return np.log1p(np.exp(x))
 
-def correlate_nanmean(x, y, **kwargs):
+
+def correlate_nanmean(*args, **kwargs):
     """Wrapper around np.correlate that handles NaNs."""
-    x_ = np.nan_to_num(x)
-    y_ = np.nan_to_num(y)
-    xcorr = np.correlate(x_, y_, **kwargs)
-    return xcorr
+    return np.correlate(*map(np.nan_to_num, args), **kwargs)
