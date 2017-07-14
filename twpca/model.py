@@ -1,11 +1,12 @@
-import numpy as np
-from sklearn.decomposition import NMF, TruncatedSVD
-from tqdm import trange
 import warnings
 
+import numpy as np
 import tensorflow as tf
-from . import warp, utils
-from .regularizers import l2, curvature
+from sklearn.decomposition import NMF, TruncatedSVD
+from tqdm import trange
+
+from . import utils, warp
+from .regularizers import curvature, l2
 
 
 class TWPCA(object):
