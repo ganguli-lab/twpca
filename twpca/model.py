@@ -181,11 +181,11 @@ class TWPCA(object):
         elif self.warptype == 'affine':
             trainable_vars.remove('tau')
         elif self.warptype == 'shift':
-            trainable_vars -= set('tau', 'tau_scale')
+            trainable_vars -= set(['tau', 'tau_scale'])
         elif self.warptype == 'scale':
-            trainable_vars -= set('tau', 'tau_shift')
+            trainable_vars -= set(['tau', 'tau_shift'])
         elif self.warpetype == 'fixed':
-            trainable_vars -= set('tau', 'tau_scale', 'tau_shift')
+            trainable_vars -= set(['tau', 'tau_scale', 'tau_shift'])
         else:
             valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale', 'fixed')
             raise ValueError("Invalid warptype={}. Must be one of {}".format(self.warptype, valid_warptypes))
