@@ -184,7 +184,7 @@ class TWPCA(object):
             trainable_vars -= set(['tau', 'tau_scale'])
         elif self.warptype == 'scale':
             trainable_vars -= set(['tau', 'tau_shift'])
-        elif self.warpetype == 'fixed':
+        elif self.warptype == 'fixed':
             trainable_vars -= set(['tau', 'tau_scale', 'tau_shift'])
         else:
             valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale', 'fixed')
