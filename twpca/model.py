@@ -175,24 +175,28 @@ class TWPCA(object):
             optimizer: tf.train.Optimizer instance
         """
         # declare which variables are trainable
-        trainable_vars = set(self._vars.keys())
+        factor_names = set(self._vars.keys()) - set(['tau', 'tau_scale', 'tau_shift'])
+        warp_names = set(['tau', 'tau_scale', 'tau_shift'])
         if self.warptype == 'nonlinear':
             pass  # all warp variables are trainable
         elif self.warptype == 'affine':
-            trainable_vars.remove('tau')
+            warp_names.remove('tau')
         elif self.warptype == 'shift':
-            trainable_vars -= set(['tau', 'tau_scale'])
+            warp_names -= set(['tau', 'tau_scale'])
         elif self.warptype == 'scale':
-            trainable_vars -= set(['tau', 'tau_shift'])
+            warp_names -= set(['tau', 'tau_shift'])
         elif self.warptype == 'fixed':
-            trainable_vars -= set(['tau', 'tau_scale', 'tau_shift'])
+            warp_names -= set(['tau', 'tau_scale', 'tau_shift'])
         else:
             valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale', 'fixed')
             raise ValueError("Invalid warptype={}. Must be one of {}".format(self.warptype, valid_warptypes))
-
-        var_list = [self._vars[k] for k in trainable_vars]
+        warp_vars = [self._vars[k] for k in warp_names]
+        factor_vars = [self._vars[k] for k in factor_names]
         self._opt = optimizer(self._learning_rate)
-        self._train_op = self._opt.minimize(self._objective, var_list=var_list)
+        self._train_factor_op = self._opt.minimize(self._objective, var_list=factor_vars)
+        self._train_warp_op = self._opt.minimize(self._objective, var_list=warp_vars)
+        self._train_op = self._opt.minimize(self._objective,
+                var_list=factor_vars + warp_vars)
         self.obj_history = []
         utils.initialize_new_vars(self._sess)
 
@@ -314,12 +318,16 @@ class TWPCA(object):
             self._vars['tau_scale'] = tf.Variable(scale, name='tau_scale', dtype=tf.float32)
             utils.initialize_new_vars(self._sess)
 
-    def fit(self, niter=1000, lr=1e-3, progressbar=True):
+    def fit(self, optimizer=None, niter=1000, lr=1e-3, vars="both", progressbar=True):
         """Fit the twPCA model
 
         Args:
             niter (optional): number of iterations to run the optimizer for (default: 1000)
             lr (optional): float, learning rate for the optimizer (default: 1e-3)
+            vars (optional): which variables to train, one of:
+                "both": train both factors and time warps
+                "warps": train time warps, but not factors
+                "factors": train factors, but not time warps
             progressbar (optional): whether to print a progressbar (default: True)
         """
         # convert niter and lr to iterables if given as scalars
@@ -330,14 +338,21 @@ class TWPCA(object):
                 raise ValueError("niter and lr must have the same length.")
         else:
             raise ValueError("niter and lr must either be numbers or iterables of the same length.")
-
+        # select which training op to run
+        if vars == "both":
+            train_op = self._train_op
+        elif vars == "warps":
+            train_op = self._train_warp_op
+        elif vars == "factors":
+            train_op = self._train_factor_op
+        else:
+            raise ValueError("vars must be one of 'both', 'warps', or 'factors' but got %s"%vars)
+        ops = [self._objective, train_op]
         # run the optimizer
         iterator = trange if progressbar else range
-        ops = [self._objective, self._train_op]
         for l, n in zip(lr, niter):
             feed = {self._learning_rate: l}
             self.obj_history += [self._sess.run(ops, feed_dict=feed)[0] for _ in iterator(n)]
-
         return self
 
     def transform(self, data=None):
