@@ -195,8 +195,13 @@ class TWPCA(object):
             optimizer: tf.train.Optimizer instance
         """
         self._opt = optimizer(self._lr)
-        var_list = [v for k, v in self._train_vars.items() if k != 'warp'] + list(self._train_vars['warp'])
-        self._train_op = self._opt.minimize(self._objective, var_list=var_list)
+        factor_var_list = [v for k, v in self._train_vars.items() if k != 'warp']
+        warp_var_list = list(self._train_vars['warp'])
+        # Create training ops for warps, factors, and warps + factors
+        self._train_factor_op = self._opt.minimize(self._objective, var_list=factor_var_list)
+        self._train_warp_op = self._opt.minimize(self._objective, var_list=warp_var_list)
+        self._train_op = self._opt.minimize(self._objective,
+                var_list=factor_var_list + warp_var_list)
         utils.initialize_new_vars(self._sess)
 
     def assign_factors(self):
@@ -305,7 +310,7 @@ class TWPCA(object):
             ops += [tf.assign(_v, tf.constant(v, dtype=tf.float32))]
         return self._sess.run(ops)
 
-    def fit(self, optimizer=None, niter=1000, lr=1e-3, progressbar=True):
+    def fit(self, optimizer=None, niter=1000, lr=1e-3, vars="both", progressbar=True):
         """Fit the twPCA model
 
         Args:
@@ -313,6 +318,10 @@ class TWPCA(object):
                                   current training operation, effectively resetting the optimizer.
             niter (optional): number of iterations to run the optimizer for (default: 1000)
             lr (optional): float, learning rate for the optimizer (default: 1e-3)
+            vars (optional): which variables to train, one of:
+                "both": train both factors and time warps
+                "warps": train time warps, but not factors
+                "factors": train factors, but not time warps
             progressbar (optional): whether to print a progressbar (default: True)
         """
 
@@ -334,10 +343,17 @@ class TWPCA(object):
 
         # run the optimizer
         iterator = trange if progressbar else range
-        _ops = [self._objective, self._train_op]
+        if vars == "both":
+            train_op = self._train_op
+        elif vars == "warps":
+            train_op = self._train_warp_op
+        elif vars == "factors":
+            train_op = self._train_factor_op
+        else:
+            raise ValueError("vars must be one of 'both', 'warps', or 'factors' but got %s"%vars)
+        _ops = [self._objective, train_op]
         for i, l in zip(niter, lr):
             self.obj_history += [self._sess.run(_ops, feed_dict={self._lr: l})[0] for tt in iterator(i)]
-
         return self
 
     @property
