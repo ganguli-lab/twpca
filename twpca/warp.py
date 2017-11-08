@@ -5,7 +5,7 @@ Functions for time warping.
 import numpy as np
 from scipy.interpolate import interp1d
 import tensorflow as tf
-from . import utils
+
 
 def warp(data, tau):
     """Applies a nonlinear temporal warping given by the indices (tau)

@@ -1,7 +1,5 @@
-import os
 import numpy as np
-import scipy.io as spio
-from scipy.ndimage import gaussian_filter1d
+
 
 def jittered_neuron(t=None, feature=None, n_trial=61, jitter=1.0, gain=0.0, noise=0.05, seed=1234):
     """Generates a synthetic dataset of a single neuron with a jittered firing pattern.
@@ -55,6 +53,7 @@ def jittered_neuron(t=None, feature=None, n_trial=61, jitter=1.0, gain=0.0, nois
 
     return feature(0), np.atleast_3d(aligned_data), np.atleast_3d(jittered_data)
 
+
 def jittered_population(n_trial=100, n_time=130, n_neuron=50, n_events=3, tau=10., event_gap=25, max_jitter=15):
     """Generates a synthetic spiking dataset of a population of neurons with correlated jitters.
 
@@ -101,7 +100,7 @@ def jittered_population(n_trial=100, n_time=130, n_neuron=50, n_events=3, tau=10
     impulse_response /= impulse_response.sum()
 
     latents = np.array([np.convolve(e, impulse_response, mode='full')[:n_time] for e in events])
-    
+
     # Coupling from one dimensional latent state to each neuron
     readout_weights = np.random.rand(n_neuron) + 0.1
 
