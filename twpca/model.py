@@ -318,7 +318,7 @@ class TWPCA(object):
             self._vars['tau_scale'] = tf.Variable(scale, name='tau_scale', dtype=tf.float32)
             utils.initialize_new_vars(self._sess)
 
-    def fit(self, optimizer=None, niter=1000, lr=1e-3, vars="both", progressbar=True):
+    def fit(self, niter=1000, lr=1e-3, vars="both", progressbar=True):
         """Fit the twPCA model
 
         Args:
