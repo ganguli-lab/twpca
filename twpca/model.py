@@ -174,37 +174,30 @@ class TWPCA(object):
         Args:
             optimizer: tf.train.Optimizer instance
         """
-<<<<<<< HEAD
-        self._opt = optimizer(self._lr)
-        factor_var_list = [v for k, v in self._train_vars.items() if k != 'warp']
-        warp_var_list = list(self._train_vars['warp'])
-        # Create training ops for warps, factors, and warps + factors
-        self._train_factor_op = self._opt.minimize(self._objective, var_list=factor_var_list)
-        self._train_warp_op = self._opt.minimize(self._objective, var_list=warp_var_list)
-        self._train_op = self._opt.minimize(self._objective,
-                var_list=factor_var_list + warp_var_list)
-=======
         # declare which variables are trainable
-        trainable_vars = set(self._vars.keys())
+        factor_names = set(self._vars.keys()) - set(['tau', 'tau_scale', 'tau_shift'])
+        warp_names = set(['tau', 'tau_scale', 'tau_shift'])
         if self.warptype == 'nonlinear':
             pass  # all warp variables are trainable
         elif self.warptype == 'affine':
-            trainable_vars.remove('tau')
+            warp_names.remove('tau')
         elif self.warptype == 'shift':
-            trainable_vars -= set(['tau', 'tau_scale'])
+            warp_names -= set(['tau', 'tau_scale'])
         elif self.warptype == 'scale':
-            trainable_vars -= set(['tau', 'tau_shift'])
+            warp_names -= set(['tau', 'tau_shift'])
         elif self.warptype == 'fixed':
-            trainable_vars -= set(['tau', 'tau_scale', 'tau_shift'])
+            warp_names -= set(['tau', 'tau_scale', 'tau_shift'])
         else:
             valid_warptypes = ('nonlinear', 'affine', 'shift', 'scale', 'fixed')
             raise ValueError("Invalid warptype={}. Must be one of {}".format(self.warptype, valid_warptypes))
-
-        var_list = [self._vars[k] for k in trainable_vars]
+        warp_vars = [self._vars[k] for k in warp_names]
+        factor_vars = [self._vars[k] for k in factor_names]
         self._opt = optimizer(self._learning_rate)
-        self._train_op = self._opt.minimize(self._objective, var_list=var_list)
+        self._train_factor_op = self._opt.minimize(self._objective, var_list=factor_vars)
+        self._train_warp_op = self._opt.minimize(self._objective, var_list=warp_vars)
+        self._train_op = self._opt.minimize(self._objective,
+                var_list=factor_vars + warp_vars)
         self.obj_history = []
->>>>>>> origin/master
         utils.initialize_new_vars(self._sess)
 
     def assign_factors(self):
@@ -345,7 +338,7 @@ class TWPCA(object):
                 raise ValueError("niter and lr must have the same length.")
         else:
             raise ValueError("niter and lr must either be numbers or iterables of the same length.")
-        # select which training ops to run
+        # select which training op to run
         if vars == "both":
             train_op = self._train_op
         elif vars == "warps":
