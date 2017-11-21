@@ -1,32 +1,6 @@
 import numpy as np
-from scipy.interpolate import interp1d
 from dtw import fastdtw
 from tqdm import trange
-
-def center_warps(warps, n_time):
-    """Center DTW warping functions.
-
-    Args:
-        warps: list of arrays with shape [n_index_matching, 2]
-        n_time: number of time points in template
-
-    Returns:
-        new_warps: array, centered version of warps
-    """
-    avg_warps = [[] for _ in range(n_time)]
-    for idx in warps:
-        for i1, i2 in idx:
-            avg_warps[i2].append(i1)
-    avg_warps = map(np.mean, avg_warps)
-    offset = np.arange(n_time) - avg_warps
-    new_warps = []
-    for warp in warps:
-        new_warp = warp.copy()
-        # note new_warp is an int so new warp indices are cast to int
-        new_warp[:, 0] = np.clip(new_warp[:, 0] + offset[new_warp[:, 1]],
-                                 0, n_time - 1)
-        new_warps.append(new_warp)
-    return new_warps
 
 def dba_align(data, iterations=2,
               template=None, center=False):
@@ -87,6 +61,6 @@ def dba_align(data, iterations=2,
                 counts[tidx, i[1]] += 1
                 values[tidx, i[1]] += data[tidx, i[0]]
         # Add fudge factor in denominator to avoid divide by 0
-        template = values.sum(0) / (counts.sum(0)[:,None] + 1)
+        template = values.sum(0) / (counts.sum(0)[:,None] + 1e-9)
 
     return template, warps, cost_history
