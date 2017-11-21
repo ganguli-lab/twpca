@@ -9,6 +9,5 @@ __version__ = '0.0.3'
 
 from .model import TWPCA
 from . import datasets
-from . import warp
 
 __all__ = ['TWPCA']
