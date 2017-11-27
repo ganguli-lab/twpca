@@ -9,12 +9,13 @@ from .soft_dtw import soft_barycenter
 import deepdish as dd
 
 class TWPCA(object):
-    def __init__(self, n_components=1, smoothness=1, nonneg=False):
+    def __init__(self, n_components=1, smoothness=1, nonneg=False, verbose=True):
 
         # model options
         self.n_components = n_components
         self.smoothness = smoothness
         self.nonneg = nonneg
+        self.verbose = verbose
 
         # attributes set by calling fit
         self._soft_warps = None
@@ -46,7 +47,7 @@ class TWPCA(object):
 
         # Use soft dtw to align to a smooth template
         init = self.V[np.random.randint(K)] # initial template
-        self._optim_result, self._barycenter = soft_barycenter(self.V, gamma=self.smoothness, **kwargs)
+        self._barycenter, self._optim_result = soft_barycenter(self.V, self.smoothness, verbose=self.verbose, **kwargs)
 
         # compute soft warps
         self._soft_warps = []
@@ -56,6 +57,9 @@ class TWPCA(object):
             value = sdtw.compute()
             w = sdtw.grad()
             self._soft_warps.append(w / np.sum(w, axis=1, keepdims=True))
+
+        # reset hard warps
+        self._hard_warps = None
 
     def inverse_soft_transform(self, X):
         """Applies inverse warping functions (misaligns data)
@@ -83,7 +87,7 @@ class TWPCA(object):
         """Applies warping functions (aligns data)
         """
         warped_data = []
-        for trial, warp in zip(tqdm(X), self.hard_warps):
+        for trial, warp in zip(X, self.hard_warps):
             values = [list() for t in range(X.shape[1])]
             for i in warp:
                 values[i[1]].append(trial[i[0]])
@@ -105,7 +109,7 @@ class TWPCA(object):
 
     @property
     def trial_average(self):
-        return np.dot(self._barycenter, self.U.T)
+        return np.dot(self.barycenter, self.U.T)
 
     @property
     def barycenter(self):
@@ -127,6 +131,7 @@ class TWPCA(object):
             raise ValueError('Warps are not fit. Must call model.fit(...) before accessing warps.')
         elif self._hard_warps is None:
             self._hard_warps = []
-            for x in tqdm(self.V, desc='Computing hard warps', leave=True):
+            itr = tqdm(self.V, desc='Computing hard warps') if self.verbose else self.V
+            for x in itr:
                 self._hard_warps.append(fastdtw(x, self._barycenter, dist=sqeuclidean)[1])
         return self._hard_warps

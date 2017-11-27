@@ -1,15 +1,10 @@
-# Author: Mathieu Blondel
-# License: Simplified BSD
-
 import numpy as np
-
 from scipy.optimize import minimize
-
 from sdtw import SoftDTW
 from sdtw.distance import SquaredEuclidean
 
-
-def soft_barycenter(X, gamma=1.0, weights=None, method="L-BFGS-B", tol=1e-1, max_iter=50, verbose=True):
+def soft_barycenter(X, gamma, method="L-BFGS-B", tol=1e-3,
+                    max_iter=50, verbose=True):
     """
     Compute barycenter (time series averaging) using soft-DTW.
 
@@ -26,12 +21,10 @@ def soft_barycenter(X, gamma=1.0, weights=None, method="L-BFGS-B", tol=1e-1, max
     verbose (bool) : If True, display progress of optimization
     """
 
-    # initial template (choose a trial at random)
-    K = X.shape[0]
-    init = np.mean(X, axis=0)
+    # initial barycenter
+    init = X.mean(0)
 
     def f(Z):
-        # Compute objective value and grad at Z.
         f.count += 1
         Z = Z.reshape(*init.shape)
         m = Z.shape[0]
@@ -44,20 +37,19 @@ def soft_barycenter(X, gamma=1.0, weights=None, method="L-BFGS-B", tol=1e-1, max
             E = sdtw.grad()
             G += D.jacobian_product(E)
             obj += value
-        obj = obj/len(X)
         if verbose:
-            print('\riter: {},   objective: {}'.format(f.count, obj), end='')
+            print('\rFitting TWPCA. Objective after {} gradient calls: {}'.format(f.count, obj), end='')
         return obj, G.ravel()
 
-    # use scipy.optimize
+    # The function works with vectors so we need to vectorize barycenter_init.
     f.count = 0
-    res = minimize(f, init.ravel(), method=method, jac=True, tol=tol, options=dict(maxfun=max_iter, disp=False))
+    res = minimize(f, init.ravel(), method=method, jac=True,
+                   tol=tol, options=dict(maxiter=max_iter, disp=False))
 
     # add new line to output
     if verbose:
-        print('\rDone after {} iterations'.format(f.count))
+        print('\rDone after {} iterations'.format(res.nit))
 
-    # optimization results to save
     results = {k: getattr(res, k) for k in ('fun', 'message', 'nfev', 'nit', 'success')}
 
-    return results, res.x.reshape(*init.shape)
+    return res.x.reshape(*init.shape), results
