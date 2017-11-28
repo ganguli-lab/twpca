@@ -38,7 +38,7 @@ def soft_barycenter(X, gamma, method="L-BFGS-B", tol=1e-3,
             G += D.jacobian_product(E)
             obj += value
         if verbose:
-            print('\rFitting TWPCA. Objective after {} gradient calls: {}'.format(f.count, obj), end='')
+            print('\rFitting TWPCA. Objective after {} gradient calls: {}'.format(f.count, obj), end='', flush=True)
         return obj, G.ravel()
 
     # The function works with vectors so we need to vectorize barycenter_init.
