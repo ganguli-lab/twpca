@@ -22,7 +22,7 @@ def soft_barycenter(X, gamma, method="L-BFGS-B", tol=1e-3,
     """
 
     # initial barycenter
-    init = X.mean(0)
+    init = X[len(X)//2]
 
     def f(Z):
         f.count += 1
