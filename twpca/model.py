@@ -94,18 +94,38 @@ class TWPCA(object):
             warped_data.append(np.array([np.mean(v, axis=0) for v in values]))
         return np.array(warped_data)
 
+    def hard_transform_spikes(self, X):
+        """Applies warping functions to binary data
+        """
+        X = np.atleast_3d(X)
+        warped_data = []
+        for trial, _warp in zip(X, self.hard_warps):
+            warp = np.array(_warp)
+            warped_trial = np.zeros(trial.shape)
+            for n, neuron in enumerate(trial.T):
+                spikes = np.argwhere(neuron).ravel()
+                for s in spikes:
+                    t = np.round(np.mean(warp[warp[:,0]==s, 1])).astype(int)
+                    warped_trial[t, n] = 1
+            warped_data.append(warped_trial)
+        return np.squeeze(warped_data)
+
     def save(self, fname):
         """Saves serialized version of model.
         """
         return dd.io.save(fname, self.__dict__)
 
+    def load_from_dict(self, modeldict):
+        """Loads previously saved model
+        """
+        for k, v in modeldict.items():
+            setattr(self, k, v)
+        return self        
+
     def load(self, fname):
         """Loads previously saved model. Overwrites data.
         """
-        modeldict = dd.io.load(fname)
-        for k, v in modeldict.items():
-            setattr(self, k, v)
-        return self
+        return self.load_from_dict(dd.io.load(fname))
 
     @property
     def trial_average(self):

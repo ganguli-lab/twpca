@@ -9,6 +9,6 @@ __version__ = '0.0.3'
 
 from .model import TWPCA
 from . import datasets
-from .crossval import heldout_transform
+from .crossval import heldout_transform, heldout_fits
 
 __all__ = ['TWPCA']

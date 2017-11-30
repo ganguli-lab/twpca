@@ -1,14 +1,14 @@
 import numpy as np
-from tqdm import tqdm
+from tqdm import tqdm, trange
+from copy import deepcopy
 
-def heldout_transform(model, data, features=None):
+def heldout_fits(model, data):
     """Leave-one-out crossvalidation for warping
 
     Parameters:
     -----------
         model (TWPCA object) : the model to fit
         data (ndarray) : time series data (trials x timepoints x features)
-        features (iterable) : optional, if specified only compute transform for these features
 
     Returns:
     --------
@@ -19,28 +19,32 @@ def heldout_transform(model, data, features=None):
     # trials, timepoints, features
     K, T, N = data.shape
 
-    # by default, compute transform for every feature
-    if features is None:
-        features = np.arange(N)
-
     # suppress printing
     was_verbose = model.verbose
     model.verbose = False
 
     # hold out each feature, and compute its transforms
-    soft, hard = [], []
-    for n in tqdm(features):
+    modeldicts = []
+    for n in trange(N):
         # fit on training data
         trainset = list(set(range(N)) - {n})
         model.fit(data[:,:,trainset])
-        # transform the held out feature
-        soft.append(model.soft_transform(data[:,:,n]))
-        hard.append(model.hard_transform(data[:,:,n]))
+        # save results
+        modeldicts.append(deepcopy(model.__dict__))
 
-    # turn model printing back on
-    if was_verbose:
-        model.verbose = True
+    return modeldicts
 
-    soft = np.array(soft).transpose(1,2,0)
-    hard = np.array(hard).transpose(1,2,0)
-    return soft, hard
+
+def heldout_transform(model, modeldicts, transform, data):
+
+    # trials, timepoints, features
+    data = np.atleast_3d(data)
+    K, T, N = data.shape
+    
+    newdata = []
+    for n, d in enumerate(tqdm(modeldicts)):
+        model.load_from_dict(d)
+        newdata.append(transform(data[:,:,n]))
+
+    # transpose data to form neurons x time x trials
+    return np.array(newdata).transpose(1,2,0)
