@@ -42,12 +42,20 @@ class TWPCA(object):
         # Do PCA
         #   V : low-dimensional time series (K x T x components)
         #   U : loadings across (N x components)
-        if self.nonneg:
-            decomp = NMF(n_components=self.n_components, alpha=self.alpha, l1_ratio=self.l1_ratio)
+        if self.n_components > N:
+            raise ValueError('n_components can\'t be larger than number of features')
+        elif self.n_components == N:
+            # skip dimensionality reduction step
+            print('n_components == n_features, skipping dimensionality reduction step....')
+            self.V = data
+            self.U = np.eye(N)
         else:
-            decomp = TruncatedSVD(n_components=self.n_components)
-        self.V = decomp.fit_transform(matrix).reshape(K, T, self.n_components)
-        self.U = np.transpose(decomp.components_)
+            if self.nonneg:
+                decomp = NMF(n_components=self.n_components, alpha=self.alpha, l1_ratio=self.l1_ratio)
+            else:
+                decomp = TruncatedSVD(n_components=self.n_components)
+            self.V = decomp.fit_transform(matrix).reshape(K, T, self.n_components)
+            self.U = np.transpose(decomp.components_)
 
         # Use soft dtw to align to a smooth template
         init = self.V[np.random.randint(K)] # initial template
