@@ -43,7 +43,7 @@ class TWPCA(object):
         #   V : low-dimensional time series (K x T x components)
         #   U : loadings across (N x components)
         if self.nonneg:
-            decomp = NMF(n_components=self.n_components)
+            decomp = NMF(n_components=self.n_components, alpha=self.alpha, l1_ratio=self.l1_ratio)
         else:
             decomp = TruncatedSVD(n_components=self.n_components)
         self.V = decomp.fit_transform(matrix).reshape(K, T, self.n_components)
