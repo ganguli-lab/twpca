@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.decomposition import TruncatedSVD, NMF
 from sdtw import SoftDTW
-from fastdtw import fastdtw
+from .dtw import dtw
 from sdtw.distance import SquaredEuclidean
 from scipy.spatial.distance import sqeuclidean
 from tqdm import tqdm
@@ -9,13 +9,17 @@ from .soft_dtw import soft_barycenter
 import deepdish as dd
 
 class TWPCA(object):
-    def __init__(self, n_components=1, smoothness=1, nonneg=False, verbose=True):
+    def __init__(self, n_components=1, smoothness=1, nonneg=False,
+                 alpha=0.0, l1_ratio=0.0, verbose=True, hard_warp_simplicity=0):
 
         # model options
         self.n_components = n_components
         self.smoothness = smoothness
         self.nonneg = nonneg
         self.verbose = verbose
+        self.hard_warp_simplicity = hard_warp_simplicity
+        self.alpha = alpha
+        self.l1_ratio = l1_ratio
 
         # attributes set by calling fit
         self._soft_warps = None
@@ -61,27 +65,15 @@ class TWPCA(object):
         # reset hard warps
         self._hard_warps = None
 
-    def inverse_soft_transform(self, X):
-        """Applies inverse warping functions (misaligns data)
-        """
-        return np.array([np.dot(w.T, trial) for w, trial in zip(warps, X)])
-
     def soft_transform(self, X):
         """Applies warping functions (aligns data)
         """
-        warps = self.soft_warps
-        return np.array([np.dot(w, trial) for w, trial in zip(warps, X)])
+        return np.array([np.dot(w, trial) for w, trial in zip(self.soft_warps, X)])
 
-    def inverse_hard_transform(self, X):
-        """Applies inverse warping functions (misaligns data)
+    def inverse_soft_transform(self, X):
+        """Applies inverse warping functions (un-aligns data)
         """
-        warped_data = []
-        for trial, warp in zip(X, self.hard_warps):
-            values = [list() for t in range(T)]
-            for i in warp:
-                values[i[1]].append(trial[i[0]])   
-            warped_data.append(np.array([np.mean(v, axis=0) for v in values]))
-        return np.array(warped_data)
+        return np.array([np.dot(w.T, trial) for w, trial in zip(self.soft_warps, X)])
 
     def hard_transform(self, X):
         """Applies warping functions (aligns data)
@@ -150,8 +142,13 @@ class TWPCA(object):
         if self._barycenter is None:
             raise ValueError('Warps are not fit. Must call model.fit(...) before accessing warps.')
         elif self._hard_warps is None:
-            self._hard_warps = []
-            itr = tqdm(self.V, desc='Computing hard warps') if self.verbose else self.V
-            for x in itr:
-                self._hard_warps.append(fastdtw(x, self._barycenter, dist=sqeuclidean)[1])
+            self._hard_warps = self.compute_hard_warps(self.hard_warp_simplicity)
         return self._hard_warps
+
+    def compute_hard_warps(self, simplicity):
+        # override default simplicity parameter
+        warps = []
+        itr = tqdm(self.V, desc='Computing hard warps') if self.verbose else self.V
+        for x in itr:
+            warps.append(dtw(x, self._barycenter, sqeuclidean, simplicity))
+        return warps
