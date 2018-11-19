@@ -1,5 +1,7 @@
 # Time warped principal components analysis (TWPCA)
 
+**<< also check out our new work on [PIECEWISE LINEAR TIME WARPING](https://github.com/ahwillia/affinewarp) >>**
+
 [Ben Poole](https://cs.stanford.edu/~poole/) :beer:, [Alex H. Williams](http://alexhwilliams.info/) :studio_microphone:, [Niru Maheswaranathan](http://niru.org/) :soccer:
 
 ![image](https://img.shields.io/pypi/v/twpca.svg)
@@ -13,6 +15,8 @@ Analysis of multi-trial neural data often relies on a strict alignment of neural
 Here we present a novel method, time-warped PCA (twPCA), that simultaneously identifies temporal warps of individual trials and low-dimensional structure across neurons and time. Furthermore, we identify the temporal warping in a data-driven, unsupervised manner, removing the need for explicit knowledge of external variables responsible for temporal variability.
 
 For more information, check out our [abstract](http://cs.stanford.edu/~poole/warptour.pdf) or [poster](http://cs.stanford.edu/~poole/twpca_poster.pdf).
+
+*We also encourage you to look into our new package, [**affinewarp**](https://github.com/ahwillia/affinewarp), which was built with similar applications in mind.*
 
 ### Code
 We provide code for twPCA in python (note: we use tensorflow as a backend for computation).
