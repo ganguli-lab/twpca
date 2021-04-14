@@ -1,8 +1,8 @@
-## Please check out our newer work on [Piecewise Linear Time Warping](https://github.com/ahwillia/affinewarp):
+## :warning: Please use our newer code --- [Piecewise Linear Time Warping](https://github.com/ahwillia/affinewarp):
 
-Our new work removes the assumption of low-dimensional dynamics, and uses a new optimization framework to avoid local minima in the warping function fitting routine. The [new code package](https://github.com/ahwillia/affinewarp) is also better optimized for speed and contains more extensive cross-validation routines.
+Our new work removes the assumption of low-dimensional dynamics, and uses a new optimization framework to avoid local minima in the warping function fitting routine. The [new code package](https://github.com/ahwillia/affinewarp) is also better optimized for speed, contains more extensive cross-validation routines, and has tools for working with spike data in continuous time.
 
-## Time warped principal components analysis (TWPCA)
+## [DEPRECATED] Time warped principal components analysis (TWPCA)
 
 [Ben Poole](https://cs.stanford.edu/~poole/) :beer:, [Alex H. Williams](http://alexhwilliams.info/) :studio_microphone:, [Niru Maheswaranathan](http://niru.org/) :soccer:
 
