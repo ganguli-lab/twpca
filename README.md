@@ -1,6 +1,6 @@
 ## :warning: Please use our newer code --- [Piecewise Linear Time Warping](https://github.com/ahwillia/affinewarp):
 
-Our new work removes the assumption of low-dimensional dynamics, and uses a new optimization framework to avoid local minima in the warping function fitting routine. The [new code package](https://github.com/ahwillia/affinewarp) is also better optimized for speed, contains more extensive cross-validation routines, and has tools for working with spike data in continuous time.
+Our new work removes the assumption of low-dimensional dynamics, and uses a new optimization framework to avoid local minima in the warping function fitting routine. The [new code package](https://github.com/ahwillia/affinewarp) is also better optimized for speed, contains cross-validation routines, and has tools for working with spike data in continuous time.
 
 ## [DEPRECATED] Time warped principal components analysis (TWPCA)
 
@@ -9,6 +9,16 @@ Our new work removes the assumption of low-dimensional dynamics, and uses a new 
 ![image](https://img.shields.io/pypi/v/twpca.svg)
 
 ## Overview
+
+### Installation
+
+Again, **this package is deprecated**, so it should only be used as legacy software. But if you want to install it, you can do so manually:
+
+```
+git clone https://github.com/ganguli-lab/twpca
+cd twpca
+pip install -e .
+```
 
 ### Description
 Analysis of multi-trial neural data often relies on a strict alignment of neural activity to stimulus or behavioral events. However, activity on a single trial may be shifted and skewed in time due to differences in attentional state, biophysical kinetics, and other unobserved latent variables. This temporal variability can inflate the apparent dimensionality of data and obscure our ability to recover inherently simple, low-dimensional structure.
